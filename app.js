@@ -15,6 +15,7 @@ const $ = (id) => document.getElementById(id);
 const money = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
 const today = () => new Date();
 const currentPeriod = () => Core.periodKey(today());
+let editingBillId = null;
 
 function cloneDefaultState() {
   return JSON.parse(JSON.stringify(defaultState));
@@ -166,7 +167,10 @@ function renderBills(period = currentPeriod()) {
         <div class="bill-meta">vence dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.category)} · ${cycle.label}${bill.recurring ? ' · mensal' : ' · só este mês'}</div>
       </div>
       <div class="bill-amount">${money(bill.amount)}</div>
-      <button class="delete-btn" aria-label="Excluir">✕</button>
+      <div class="bill-actions">
+        <button class="row-action edit-btn" type="button" aria-label="Editar ${escapeHtml(bill.name)}">Editar</button>
+        <button class="row-action delete-btn" type="button" aria-label="Excluir ${escapeHtml(bill.name)}">✕</button>
+      </div>
     `;
     row.querySelector('.bill-check').addEventListener('change', event => {
       state.bills = state.bills.map(item => item.id === bill.id
@@ -175,6 +179,7 @@ function renderBills(period = currentPeriod()) {
       persist();
       render();
     });
+    row.querySelector('.edit-btn').addEventListener('click', () => openBillDialog(bill));
     row.querySelector('.delete-btn').addEventListener('click', () => {
       state.bills = state.bills.filter(item => item.id !== bill.id);
       persist();
@@ -224,8 +229,33 @@ function validateSettingsForm() {
   return result.ok;
 }
 
+function resetBillForm() {
+  editingBillId = null;
+  $('billForm').reset();
+  $('billRecurring').checked = true;
+  $('billDialogEyebrow').textContent = 'NOVA CONTA';
+  $('billDialogTitle').textContent = 'Planejar vencimento';
+  $('saveBillBtn').textContent = 'Adicionar';
+}
+
+function openBillDialog(bill = null) {
+  resetBillForm();
+  if (bill) {
+    editingBillId = bill.id;
+    $('billName').value = bill.name;
+    $('billAmount').value = bill.amount;
+    $('billDueDay').value = bill.dueDay;
+    $('billCategory').value = bill.category;
+    $('billRecurring').checked = bill.recurring;
+    $('billDialogEyebrow').textContent = 'EDITAR CONTA';
+    $('billDialogTitle').textContent = 'Atualizar planejamento';
+    $('saveBillBtn').textContent = 'Salvar alterações';
+  }
+  $('billDialog').showModal();
+}
+
 $('openSettings').addEventListener('click', openSettings);
-$('addBillBtn').addEventListener('click', () => $('billDialog').showModal());
+$('addBillBtn').addEventListener('click', () => openBillDialog());
 $('startOnboardingBtn').addEventListener('click', () => {
   state.onboarded = true;
   persist();
@@ -262,23 +292,30 @@ $('settingsForm').addEventListener('submit', (event) => {
 
 $('billForm').addEventListener('submit', (event) => {
   event.preventDefault();
+  const period = currentPeriod();
   const recurring = $('billRecurring').checked;
-  state.bills.push(Core.normalizeBill({
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+  const existing = editingBillId ? state.bills.find(item => item.id === editingBillId) : null;
+  const nextBill = Core.normalizeBill({
+    id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
     name: $('billName').value.trim(),
     amount: Number($('billAmount').value),
     dueDay: Number($('billDueDay').value),
     category: $('billCategory').value,
     recurring,
-    activePeriod: recurring ? null : currentPeriod(),
-    paidPeriods: []
-  }, currentPeriod()));
+    activePeriod: recurring ? null : (existing?.activePeriod || period),
+    paidPeriods: existing?.paidPeriods || []
+  }, period);
+
+  if (existing) state.bills = state.bills.map(item => item.id === existing.id ? nextBill : item);
+  else state.bills.push(nextBill);
+
   persist();
-  event.target.reset();
-  $('billRecurring').checked = true;
   $('billDialog').close();
+  resetBillForm();
   render();
 });
+
+$('billDialog').addEventListener('close', () => resetBillForm());
 
 document.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => {
   document.querySelectorAll('.segment').forEach(item => item.classList.remove('active'));
