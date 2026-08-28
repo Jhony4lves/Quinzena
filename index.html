@@ -36,26 +36,14 @@
       </section>
 
       <section class="metrics-grid">
-        <article class="metric card">
-          <span>Receita do ciclo</span>
-          <strong id="cycleIncome">R$ 0,00</strong>
-        </article>
-        <article class="metric card">
-          <span>Contas do ciclo</span>
-          <strong id="cycleBills">R$ 0,00</strong>
-        </article>
-        <article class="metric card">
-          <span>Saldo mensal previsto</span>
-          <strong id="monthBalance">R$ 0,00</strong>
-        </article>
+        <article class="metric card"><span>Receita do ciclo</span><strong id="cycleIncome">R$ 0,00</strong></article>
+        <article class="metric card"><span>Contas do ciclo</span><strong id="cycleBills">R$ 0,00</strong></article>
+        <article class="metric card"><span>Saldo mensal previsto</span><strong id="monthBalance">R$ 0,00</strong></article>
       </section>
 
       <section class="split card">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">MAPA DO MÊS</p>
-            <h2>Qual pagamento banca o quê?</h2>
-          </div>
+          <div><p class="eyebrow">MAPA DO MÊS</p><h2>Qual pagamento banca o quê?</h2></div>
           <button class="ghost-btn" id="addBillBtn">+ Conta</button>
         </div>
         <div class="cycle-columns" id="cycleColumns"></div>
@@ -63,10 +51,7 @@
 
       <section class="card">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">CONTAS</p>
-            <h2>Próximos vencimentos</h2>
-          </div>
+          <div><p class="eyebrow">CONTAS</p><h2>Próximos vencimentos</h2></div>
           <div class="segmented" role="group" aria-label="Filtro de contas">
             <button class="segment active" data-filter="all">Todas</button>
             <button class="segment" data-filter="open">Abertas</button>
@@ -114,37 +99,19 @@
   <dialog id="settingsDialog">
     <form method="dialog" class="dialog-card" id="settingsForm">
       <div class="dialog-header">
-        <div>
-          <p class="eyebrow">CONFIGURAÇÃO</p>
-          <h2>Como você recebe?</h2>
-        </div>
+        <div><p class="eyebrow">CONFIGURAÇÃO</p><h2>Como você recebe?</h2></div>
         <button class="icon-btn" value="cancel" aria-label="Fechar">✕</button>
       </div>
-
-      <label>Salário líquido mensal
-        <input type="number" id="salaryInput" min="0" step="0.01" placeholder="Ex.: 2200" required />
-      </label>
-
+      <label>Salário líquido mensal<input type="number" id="salaryInput" min="0" step="0.01" placeholder="Ex.: 2200" required /></label>
       <div class="two-col">
-        <label>1º pagamento — dia
-          <input type="number" id="payDay1" min="1" max="28" value="1" required />
-        </label>
-        <label>2º pagamento — dia
-          <input type="number" id="payDay2" min="1" max="28" value="15" required />
-        </label>
+        <label>1º pagamento — dia<input type="number" id="payDay1" min="1" max="28" value="1" required /></label>
+        <label>2º pagamento — dia<input type="number" id="payDay2" min="1" max="28" value="15" required /></label>
       </div>
-
       <div class="two-col">
-        <label>1º pagamento — %
-          <input type="number" id="split1" min="1" max="99" value="70" required />
-        </label>
-        <label>2º pagamento — %
-          <input type="number" id="split2" min="1" max="99" value="30" required />
-        </label>
+        <label>1º pagamento — %<input type="number" id="split1" min="1" max="99" value="70" required /></label>
+        <label>2º pagamento — %<input type="number" id="split2" min="1" max="99" value="30" required /></label>
       </div>
-
       <p class="form-hint" id="splitHint">A soma precisa dar 100%.</p>
-
       <div class="dialog-actions">
         <button class="secondary-btn" value="cancel">Cancelar</button>
         <button class="primary-btn" id="saveSettingsBtn" value="default">Salvar</button>
@@ -155,42 +122,20 @@
   <dialog id="billDialog">
     <form method="dialog" class="dialog-card" id="billForm">
       <div class="dialog-header">
-        <div>
-          <p class="eyebrow">NOVA CONTA</p>
-          <h2>Planejar vencimento</h2>
-        </div>
+        <div><p class="eyebrow" id="billDialogEyebrow">NOVA CONTA</p><h2 id="billDialogTitle">Planejar vencimento</h2></div>
         <button class="icon-btn" value="cancel" aria-label="Fechar">✕</button>
       </div>
-
-      <label>Descrição
-        <input type="text" id="billName" maxlength="60" placeholder="Ex.: Internet" required />
-      </label>
-
+      <label>Descrição<input type="text" id="billName" maxlength="60" placeholder="Ex.: Internet" required /></label>
       <div class="two-col">
-        <label>Valor
-          <input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0,00" required />
-        </label>
-        <label>Vencimento — dia
-          <input type="number" id="billDueDay" min="1" max="31" required />
-        </label>
+        <label>Valor<input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0,00" required /></label>
+        <label>Vencimento — dia<input type="number" id="billDueDay" min="1" max="31" required /></label>
       </div>
-
       <label>Categoria
         <select id="billCategory">
-          <option>Moradia</option>
-          <option>Alimentação</option>
-          <option>Transporte</option>
-          <option>Cartão</option>
-          <option>Assinaturas</option>
-          <option>Educação</option>
-          <option>Saúde</option>
-          <option>Dívidas</option>
-          <option>Outros</option>
+          <option>Moradia</option><option>Alimentação</option><option>Transporte</option><option>Cartão</option><option>Assinaturas</option><option>Educação</option><option>Saúde</option><option>Dívidas</option><option>Outros</option>
         </select>
       </label>
-
       <label class="check-row"><input type="checkbox" id="billRecurring" checked /> Repetir todo mês</label>
-
       <div class="dialog-actions">
         <button class="secondary-btn" value="cancel">Cancelar</button>
         <button class="primary-btn" id="saveBillBtn" value="default">Adicionar</button>
@@ -199,10 +144,7 @@
   </dialog>
 
   <template id="emptyTemplate">
-    <div class="empty-state">
-      <strong>Nada por aqui ainda.</strong>
-      <span>Adicione uma conta para começar a organizar o mês.</span>
-    </div>
+    <div class="empty-state"><strong>Nada por aqui ainda.</strong><span>Adicione uma conta para começar a organizar o mês.</span></div>
   </template>
 
   <script src="core.js"></script>
