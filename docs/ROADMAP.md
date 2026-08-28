@@ -28,11 +28,7 @@
 - [ ] Cupom/preço de lançamento.
 
 ## Fase 4 — QA e lançamento (08–10/09)
-- [x] Ícones Android raster 192x192 e 512x512.
-- [x] Cache PWA versionado sem alterar armazenamento financeiro local.
-- [x] Contrato de instalação PWA coberto pela QA automática.
-- [x] Workflow de deploy GitHub Pages preparado.
-- [ ] Habilitar GitHub Pages para GitHub Actions, se a primeira publicação exigir configuração manual.
+- [x] Hospedagem HTTPS de produção via GitHub Pages.
 - [ ] Teste Android/Chrome.
 - [ ] Teste desktop.
 - [ ] Teste instalação PWA/offline.
@@ -40,6 +36,12 @@
 - [ ] Corrigir bloqueadores.
 - [ ] Publicar produto.
 - [ ] Fazer primeira rodada de divulgação.
+
+## Produção
+
+URL atual: https://jhony4lves.github.io/Quinzena/
+
+O deploy é feito automaticamente pela workflow `.github/workflows/pages.yml` após alterações na `main`.
 
 ## Corte de escopo
 
