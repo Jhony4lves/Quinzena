@@ -9,17 +9,19 @@ permissions:
   contents: read
 
 jobs:
-  financial-core:
+  product-qa:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run financial core tests
-        run: node --test tests/core.test.js
+      - name: Run financial and PWA tests
+        run: node --test tests/*.test.js
       - name: Static syntax check
         run: |
           node --check core.js
           node --check app.js
           node --check sw.js
+          node --check tests/core.test.js
+          node --check tests/pwa.test.js
