@@ -85,8 +85,12 @@ function render() {
   const cycleIncome = Core.incomeForCycle(currentKey, state.settings);
   const cycleBills = Core.billTotalForCycle(currentKey, state.bills, state.settings, period);
   const cycleOpenBills = Core.openBillTotalForCycle(currentKey, state.bills, state.settings, period);
-  const available = Core.availableForCycle(currentKey, state.bills, state.settings, period);
+  const available = Core.plannedAvailableForCycle(currentKey, state.bills, state.settings, period);
+  const reserveIncoming = Core.reserveIncomingForCycle(currentKey, state.bills, state.settings, period);
+  const reserveOutgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
   const monthBalance = Core.monthBalance(state.bills, state.settings, period);
+  const reservePlan = Core.automaticReservePlan(state.bills, state.settings, period);
+  const currentGap = reservePlan.find(item => item.toKey === currentKey);
 
   $('cycleLabel').textContent = `${currentCfg.label.toUpperCase()} · ${currentCfg.pct}%`;
   $('availableAmount').textContent = money(available);
@@ -96,43 +100,116 @@ function render() {
   $('monthBalance').textContent = money(monthBalance);
   $('nextPayDate').textContent = `Próximo pagamento · ${formatDateShort(nextPaymentDate())}`;
 
+  if (reserveOutgoing > 0) {
+    $('availableCaption').textContent = `disponível após contas e ${money(reserveOutgoing)} reservados para o próximo ciclo`;
+  } else if (reserveIncoming > 0) {
+    $('availableCaption').textContent = `disponível já contando ${money(reserveIncoming)} da reserva do ciclo anterior`;
+  } else {
+    $('availableCaption').textContent = 'disponível depois das contas planejadas';
+  }
+
   if (!salary) {
     $('healthText').textContent = 'Configure sua renda';
     $('healthText').style.color = 'var(--warning)';
+  } else if (currentGap?.uncovered > 0) {
+    $('healthText').textContent = `Ainda faltam ${money(currentGap.uncovered)}`;
+    $('healthText').style.color = 'var(--danger)';
   } else if (available < 0) {
     $('healthText').textContent = `Faltam ${money(Math.abs(available))}`;
     $('healthText').style.color = 'var(--danger)';
   } else if (available < cycleIncome * .15) {
-    $('healthText').textContent = 'Ciclo apertado';
+    $('healthText').textContent = reserveIncoming > 0 ? 'Ciclo equilibrado pela reserva' : 'Ciclo apertado';
     $('healthText').style.color = 'var(--warning)';
   } else {
-    $('healthText').textContent = 'Ciclo saudável';
+    $('healthText').textContent = reserveOutgoing > 0 ? 'Reserva do próximo ciclo protegida' : 'Ciclo saudável';
     $('healthText').style.color = 'var(--accent)';
   }
 
+  renderReservePlan(period);
   renderCycles(currentKey, period);
   renderBills(period);
+}
+
+function renderReservePlan(period) {
+  const card = $('reserveCard');
+  const host = $('reserveList');
+  const plan = Core.automaticReservePlan(state.bills, state.settings, period);
+
+  if (!plan.length) {
+    card.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+
+  card.hidden = false;
+  host.innerHTML = plan.map(item => {
+    const from = Core.payConfigByKey(item.fromKey, state.settings);
+    const to = Core.payConfigByKey(item.toKey, state.settings);
+    const recurringBills = activeBills()
+      .filter(bill => bill.recurring && Core.cycleForDueDay(bill.dueDay, state.settings) === item.toKey)
+      .sort((a, b) => b.amount - a.amount);
+    const billContext = recurringBills.length === 1
+      ? `A conta recorrente “${escapeHtml(recurringBills[0].name)}” deixa`
+      : `As contas recorrentes do ${to.label} deixam`;
+
+    if (item.amount <= 0) {
+      return `<div class="reserve-item danger">
+        <div class="reserve-flow"><strong>${billContext} um déficit de ${money(item.required)}.</strong><span>O ${from.label} também não tem sobra recorrente para criar essa reserva.</span></div>
+        <b>${money(item.uncovered)} descobertos</b>
+      </div>`;
+    }
+
+    const uncovered = item.uncovered > 0
+      ? `<span class="reserve-uncovered">Ainda ficam ${money(item.uncovered)} sem cobertura mensal.</span>`
+      : `<span>Assim o próximo ${to.label} já começa com esse valor protegido.</span>`;
+
+    return `<div class="reserve-item ${item.uncovered > 0 ? 'warning' : ''}">
+      <div class="reserve-flow">
+        <strong>${billContext} ${money(item.required)} faltando todo mês.</strong>
+        <span>Separe ${money(item.amount)} do ${from.label} para o próximo ${to.label}.</span>
+        ${uncovered}
+      </div>
+      <b>Reservar ${money(item.amount)}</b>
+    </div>`;
+  }).join('');
 }
 
 function renderCycles(currentKey, period) {
   const host = $('cycleColumns');
   host.innerHTML = '';
+  const plan = Core.automaticReservePlan(state.bills, state.settings, period);
+
   for (const key of ['p1', 'p2']) {
     const cfg = Core.payConfigByKey(key, state.settings);
     const bills = activeBills().filter(bill => Core.cycleForDueDay(bill.dueDay, state.settings) === key);
-    const income = Core.incomeForCycle(key, state.settings);
-    const total = Core.billTotalForCycle(key, state.bills, state.settings, period);
+    const plannedAvailable = Core.plannedAvailableForCycle(key, state.bills, state.settings, period);
+    const incoming = plan.find(item => item.toKey === key && item.amount > 0);
+    const outgoing = plan.find(item => item.fromKey === key && item.amount > 0);
     const panel = document.createElement('article');
     panel.className = `cycle-panel ${key === currentKey ? 'current' : ''}`;
+
+    const billRows = bills.length
+      ? bills.sort((a,b)=>a.dueDay-b.dueDay).map(bill => {
+          const paid = Core.isBillPaid(bill, period);
+          return `<div class="cycle-bill ${paid ? 'paid' : ''}"><span>${paid ? '✓ ' : ''}dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.name)}</span><span>${money(bill.amount)}</span></div>`;
+        }).join('')
+      : `<div class="empty-state"><span>Nenhuma conta alocada.</span></div>`;
+
+    const incomingRow = incoming
+      ? `<div class="cycle-bill cycle-reserve incoming"><span>↳ reserva do ${Core.payConfigByKey(incoming.fromKey, state.settings).label}</span><span>+ ${money(incoming.amount)}</span></div>`
+      : '';
+    const outgoingRow = outgoing
+      ? `<div class="cycle-bill cycle-reserve outgoing"><span>↗ reservar p/ próximo ${Core.payConfigByKey(outgoing.toKey, state.settings).label}</span><span>- ${money(outgoing.amount)}</span></div>`
+      : '';
+
     panel.innerHTML = `
       <header>
         <div><strong>${cfg.label}</strong><span>dia ${cfg.day} · ${cfg.pct}% da renda</span></div>
-        <strong class="cycle-total">${money(income - total)}</strong>
+        <strong class="cycle-total">${money(plannedAvailable)}</strong>
       </header>
-      ${bills.length ? bills.sort((a,b)=>a.dueDay-b.dueDay).map(bill => {
-        const paid = Core.isBillPaid(bill, period);
-        return `<div class="cycle-bill ${paid ? 'paid' : ''}"><span>${paid ? '✓ ' : ''}dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.name)}</span><span>${money(bill.amount)}</span></div>`;
-      }).join('') : `<div class="empty-state"><span>Nenhuma conta alocada.</span></div>`}
+      ${billRows}
+      ${incomingRow}
+      ${outgoingRow}
     `;
     host.appendChild(panel);
   }
@@ -190,7 +267,7 @@ function renderBills(period = currentPeriod()) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  return String(value).replace(/[&<>'\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[char]));
 }
 
 function openSettings() {
