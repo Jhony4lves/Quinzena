@@ -83,12 +83,33 @@
           <p class="muted">Exporte seus dados em JSON e importe depois em qualquer aparelho.</p>
         </div>
         <div class="utility-actions">
-          <button class="secondary-btn" id="exportBtn">Exportar</button>
+          <button class="secondary-btn" id="csvExportBtn">CSV</button>
+          <button class="secondary-btn" id="exportBtn">Backup</button>
           <label class="secondary-btn file-label">Importar<input type="file" id="importInput" accept="application/json" hidden /></label>
         </div>
       </section>
     </main>
   </div>
+
+  <dialog id="welcomeDialog">
+    <div class="dialog-card welcome-card">
+      <div class="welcome-mark">Q</div>
+      <div>
+        <p class="eyebrow">BEM-VINDO AO QUINZENA</p>
+        <h2>Seu mês tem duas batidas.</h2>
+        <p class="muted welcome-copy">Em menos de dois minutos, o Quinzena separa suas contas entre os dois pagamentos e mostra o que realmente está livre em cada ciclo.</p>
+      </div>
+      <div class="welcome-steps">
+        <div><b>1</b><span>Informe quanto e quando você recebe.</span></div>
+        <div><b>2</b><span>Cadastre os vencimentos que se repetem.</span></div>
+        <div><b>3</b><span>Veja qual pagamento banca cada conta.</span></div>
+      </div>
+      <div class="dialog-actions onboarding-actions">
+        <button class="secondary-btn" id="loadDemoBtn" type="button">Ver exemplo</button>
+        <button class="primary-btn" id="startOnboardingBtn" type="button">Configurar meu mês</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="settingsDialog">
     <form method="dialog" class="dialog-card" id="settingsForm">
