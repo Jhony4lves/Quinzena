@@ -1,0 +1,14 @@
+{
+  "name": "Quinzena",
+  "short_name": "Quinzena",
+  "description": "Organize contas e orçamento para quem recebe em duas datas.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080b10",
+  "theme_color": "#0d1117",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
