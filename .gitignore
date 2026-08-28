@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+node_modules/
+dist/
+coverage/
+quinzena-backup-*.json
+*.local.json
