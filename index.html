@@ -8,31 +8,27 @@
   <title>Quinzena — seu dinheiro no ritmo do pagamento</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    .bill-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px}
+    .row-action{border:0;background:transparent;color:var(--muted);padding:7px 9px;border-radius:9px;font-size:.78rem;font-weight:750}
+    .edit-btn:hover{color:var(--accent);background:rgba(119,242,179,.08)}
+    @media(max-width:720px){.bill-actions{grid-column:2/4;justify-self:end}.bill-row{row-gap:5px}}
+  </style>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">Q</div>
-        <div>
-          <strong>Quinzena</strong>
-          <span>seu dinheiro no ritmo do pagamento</span>
-        </div>
+        <div><strong>Quinzena</strong><span>seu dinheiro no ritmo do pagamento</span></div>
       </div>
       <button class="icon-btn" id="openSettings" aria-label="Configurações">⚙</button>
     </header>
 
     <main>
       <section class="hero card">
-        <div>
-          <p class="eyebrow" id="cycleLabel">PRÓXIMO CICLO</p>
-          <h1 id="availableAmount">R$ 0,00</h1>
-          <p class="muted" id="availableCaption">disponível depois das contas planejadas</p>
-        </div>
-        <div class="hero-side">
-          <span class="pill" id="nextPayDate">Próximo pagamento —</span>
-          <span class="health" id="healthText">Configure sua renda</span>
-        </div>
+        <div><p class="eyebrow" id="cycleLabel">PRÓXIMO CICLO</p><h1 id="availableAmount">R$ 0,00</h1><p class="muted" id="availableCaption">disponível depois das contas planejadas</p></div>
+        <div class="hero-side"><span class="pill" id="nextPayDate">Próximo pagamento —</span><span class="health" id="healthText">Configure sua renda</span></div>
       </section>
 
       <section class="metrics-grid">
@@ -42,36 +38,21 @@
       </section>
 
       <section class="split card">
-        <div class="section-heading">
-          <div><p class="eyebrow">MAPA DO MÊS</p><h2>Qual pagamento banca o quê?</h2></div>
-          <button class="ghost-btn" id="addBillBtn">+ Conta</button>
-        </div>
+        <div class="section-heading"><div><p class="eyebrow">MAPA DO MÊS</p><h2>Qual pagamento banca o quê?</h2></div><button class="ghost-btn" id="addBillBtn">+ Conta</button></div>
         <div class="cycle-columns" id="cycleColumns"></div>
       </section>
 
       <section class="card">
         <div class="section-heading">
           <div><p class="eyebrow">CONTAS</p><h2>Próximos vencimentos</h2></div>
-          <div class="segmented" role="group" aria-label="Filtro de contas">
-            <button class="segment active" data-filter="all">Todas</button>
-            <button class="segment" data-filter="open">Abertas</button>
-            <button class="segment" data-filter="paid">Pagas</button>
-          </div>
+          <div class="segmented" role="group" aria-label="Filtro de contas"><button class="segment active" data-filter="all">Todas</button><button class="segment" data-filter="open">Abertas</button><button class="segment" data-filter="paid">Pagas</button></div>
         </div>
         <div class="bills-list" id="billsList"></div>
       </section>
 
       <section class="card utility-card">
-        <div>
-          <p class="eyebrow">SEUS DADOS</p>
-          <h2>Backup sem conta e sem nuvem</h2>
-          <p class="muted">Exporte seus dados em JSON e importe depois em qualquer aparelho.</p>
-        </div>
-        <div class="utility-actions">
-          <button class="secondary-btn" id="csvExportBtn">CSV</button>
-          <button class="secondary-btn" id="exportBtn">Backup</button>
-          <label class="secondary-btn file-label">Importar<input type="file" id="importInput" accept="application/json" hidden /></label>
-        </div>
+        <div><p class="eyebrow">SEUS DADOS</p><h2>Backup sem conta e sem nuvem</h2><p class="muted">Exporte seus dados em JSON e importe depois em qualquer aparelho.</p></div>
+        <div class="utility-actions"><button class="secondary-btn" id="csvExportBtn">CSV</button><button class="secondary-btn" id="exportBtn">Backup</button><label class="secondary-btn file-label">Importar<input type="file" id="importInput" accept="application/json" hidden /></label></div>
       </section>
     </main>
   </div>
@@ -79,75 +60,35 @@
   <dialog id="welcomeDialog">
     <div class="dialog-card welcome-card">
       <div class="welcome-mark">Q</div>
-      <div>
-        <p class="eyebrow">BEM-VINDO AO QUINZENA</p>
-        <h2>Seu mês tem duas batidas.</h2>
-        <p class="muted welcome-copy">Em menos de dois minutos, o Quinzena separa suas contas entre os dois pagamentos e mostra o que realmente está livre em cada ciclo.</p>
-      </div>
-      <div class="welcome-steps">
-        <div><b>1</b><span>Informe quanto e quando você recebe.</span></div>
-        <div><b>2</b><span>Cadastre os vencimentos que se repetem.</span></div>
-        <div><b>3</b><span>Veja qual pagamento banca cada conta.</span></div>
-      </div>
-      <div class="dialog-actions onboarding-actions">
-        <button class="secondary-btn" id="loadDemoBtn" type="button">Ver exemplo</button>
-        <button class="primary-btn" id="startOnboardingBtn" type="button">Configurar meu mês</button>
-      </div>
+      <div><p class="eyebrow">BEM-VINDO AO QUINZENA</p><h2>Seu mês tem duas batidas.</h2><p class="muted welcome-copy">Em menos de dois minutos, o Quinzena separa suas contas entre os dois pagamentos e mostra o que realmente está livre em cada ciclo.</p></div>
+      <div class="welcome-steps"><div><b>1</b><span>Informe quanto e quando você recebe.</span></div><div><b>2</b><span>Cadastre os vencimentos que se repetem.</span></div><div><b>3</b><span>Veja qual pagamento banca cada conta.</span></div></div>
+      <div class="dialog-actions onboarding-actions"><button class="secondary-btn" id="loadDemoBtn" type="button">Ver exemplo</button><button class="primary-btn" id="startOnboardingBtn" type="button">Configurar meu mês</button></div>
     </div>
   </dialog>
 
   <dialog id="settingsDialog">
     <form method="dialog" class="dialog-card" id="settingsForm">
-      <div class="dialog-header">
-        <div><p class="eyebrow">CONFIGURAÇÃO</p><h2>Como você recebe?</h2></div>
-        <button class="icon-btn" value="cancel" aria-label="Fechar">✕</button>
-      </div>
+      <div class="dialog-header"><div><p class="eyebrow">CONFIGURAÇÃO</p><h2>Como você recebe?</h2></div><button class="icon-btn" value="cancel" aria-label="Fechar">✕</button></div>
       <label>Salário líquido mensal<input type="number" id="salaryInput" min="0" step="0.01" placeholder="Ex.: 2200" required /></label>
-      <div class="two-col">
-        <label>1º pagamento — dia<input type="number" id="payDay1" min="1" max="28" value="1" required /></label>
-        <label>2º pagamento — dia<input type="number" id="payDay2" min="1" max="28" value="15" required /></label>
-      </div>
-      <div class="two-col">
-        <label>1º pagamento — %<input type="number" id="split1" min="1" max="99" value="70" required /></label>
-        <label>2º pagamento — %<input type="number" id="split2" min="1" max="99" value="30" required /></label>
-      </div>
+      <div class="two-col"><label>1º pagamento — dia<input type="number" id="payDay1" min="1" max="28" value="1" required /></label><label>2º pagamento — dia<input type="number" id="payDay2" min="1" max="28" value="15" required /></label></div>
+      <div class="two-col"><label>1º pagamento — %<input type="number" id="split1" min="1" max="99" value="70" required /></label><label>2º pagamento — %<input type="number" id="split2" min="1" max="99" value="30" required /></label></div>
       <p class="form-hint" id="splitHint">A soma precisa dar 100%.</p>
-      <div class="dialog-actions">
-        <button class="secondary-btn" value="cancel">Cancelar</button>
-        <button class="primary-btn" id="saveSettingsBtn" value="default">Salvar</button>
-      </div>
+      <div class="dialog-actions"><button class="secondary-btn" value="cancel">Cancelar</button><button class="primary-btn" id="saveSettingsBtn" value="default">Salvar</button></div>
     </form>
   </dialog>
 
   <dialog id="billDialog">
     <form method="dialog" class="dialog-card" id="billForm">
-      <div class="dialog-header">
-        <div><p class="eyebrow" id="billDialogEyebrow">NOVA CONTA</p><h2 id="billDialogTitle">Planejar vencimento</h2></div>
-        <button class="icon-btn" value="cancel" aria-label="Fechar">✕</button>
-      </div>
+      <div class="dialog-header"><div><p class="eyebrow" id="billDialogEyebrow">NOVA CONTA</p><h2 id="billDialogTitle">Planejar vencimento</h2></div><button class="icon-btn" value="cancel" aria-label="Fechar">✕</button></div>
       <label>Descrição<input type="text" id="billName" maxlength="60" placeholder="Ex.: Internet" required /></label>
-      <div class="two-col">
-        <label>Valor<input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0,00" required /></label>
-        <label>Vencimento — dia<input type="number" id="billDueDay" min="1" max="31" required /></label>
-      </div>
-      <label>Categoria
-        <select id="billCategory">
-          <option>Moradia</option><option>Alimentação</option><option>Transporte</option><option>Cartão</option><option>Assinaturas</option><option>Educação</option><option>Saúde</option><option>Dívidas</option><option>Outros</option>
-        </select>
-      </label>
+      <div class="two-col"><label>Valor<input type="number" id="billAmount" min="0.01" step="0.01" placeholder="0,00" required /></label><label>Vencimento — dia<input type="number" id="billDueDay" min="1" max="31" required /></label></div>
+      <label>Categoria<select id="billCategory"><option>Moradia</option><option>Alimentação</option><option>Transporte</option><option>Cartão</option><option>Assinaturas</option><option>Educação</option><option>Saúde</option><option>Dívidas</option><option>Outros</option></select></label>
       <label class="check-row"><input type="checkbox" id="billRecurring" checked /> Repetir todo mês</label>
-      <div class="dialog-actions">
-        <button class="secondary-btn" value="cancel">Cancelar</button>
-        <button class="primary-btn" id="saveBillBtn" value="default">Adicionar</button>
-      </div>
+      <div class="dialog-actions"><button class="secondary-btn" value="cancel">Cancelar</button><button class="primary-btn" id="saveBillBtn" value="default">Adicionar</button></div>
     </form>
   </dialog>
 
-  <template id="emptyTemplate">
-    <div class="empty-state"><strong>Nada por aqui ainda.</strong><span>Adicione uma conta para começar a organizar o mês.</span></div>
-  </template>
-
-  <script src="core.js"></script>
-  <script src="app.js"></script>
+  <template id="emptyTemplate"><div class="empty-state"><strong>Nada por aqui ainda.</strong><span>Adicione uma conta para começar a organizar o mês.</span></div></template>
+  <script src="core.js"></script><script src="app.js"></script>
 </body>
 </html>
