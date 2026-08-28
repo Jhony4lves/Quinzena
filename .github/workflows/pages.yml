@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p dist/icons
           cp index.html styles.css core.js app.js manifest.webmanifest sw.js icon.svg dist/
-          cp icons/icon-192.svg icons/icon-512.svg dist/icons/
+          cp icons/icon-192.png icons/icon-512.png dist/icons/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
