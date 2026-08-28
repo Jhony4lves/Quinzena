@@ -12,7 +12,23 @@
     .bill-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px}
     .row-action{border:0;background:transparent;color:var(--muted);padding:7px 9px;border-radius:9px;font-size:.78rem;font-weight:750}
     .edit-btn:hover{color:var(--accent);background:rgba(119,242,179,.08)}
-    @media(max-width:720px){.bill-actions{grid-column:2/4;justify-self:end}.bill-row{row-gap:5px}}
+    .reserve-card{padding:20px 22px;margin-top:12px;border-color:rgba(119,242,179,.24);background:linear-gradient(180deg,rgba(19,39,34,.94),rgba(15,20,28,.96))}
+    .reserve-card[hidden]{display:none}
+    .reserve-card .section-heading{margin-bottom:12px}
+    .reserve-list{display:grid;gap:9px}
+    .reserve-item{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:13px 14px;border-radius:15px;border:1px solid rgba(119,242,179,.14);background:rgba(119,242,179,.045)}
+    .reserve-item.warning{border-color:rgba(255,209,102,.24);background:rgba(255,209,102,.045)}
+    .reserve-item.danger{border-color:rgba(255,118,118,.24);background:rgba(255,118,118,.045)}
+    .reserve-flow{display:grid;gap:4px}
+    .reserve-flow strong{font-size:.9rem;line-height:1.35}
+    .reserve-flow span{font-size:.8rem;color:var(--muted);line-height:1.4}
+    .reserve-item>b{white-space:nowrap;color:var(--accent);font-size:.86rem}
+    .reserve-item.warning>b{color:var(--warning)}
+    .reserve-item.danger>b,.reserve-uncovered{color:var(--danger)!important}
+    .cycle-reserve{font-weight:700;border-top-style:dashed}
+    .cycle-reserve.incoming{color:var(--accent)}
+    .cycle-reserve.outgoing{color:#c8ffe2}
+    @media(max-width:720px){.bill-actions{grid-column:2/4;justify-self:end}.bill-row{row-gap:5px}.reserve-item{align-items:flex-start;flex-direction:column}.reserve-item>b{white-space:normal}}
   </style>
 </head>
 <body>
@@ -35,6 +51,11 @@
         <article class="metric card"><span>Receita do ciclo</span><strong id="cycleIncome">R$ 0,00</strong></article>
         <article class="metric card"><span>Contas do ciclo</span><strong id="cycleBills">R$ 0,00</strong></article>
         <article class="metric card"><span>Saldo mensal previsto</span><strong id="monthBalance">R$ 0,00</strong></article>
+      </section>
+
+      <section class="reserve-card card" id="reserveCard" hidden>
+        <div class="section-heading"><div><p class="eyebrow">RESERVA AUTOMÁTICA</p><h2>Um pagamento ajuda o próximo</h2></div></div>
+        <div class="reserve-list" id="reserveList"></div>
       </section>
 
       <section class="split card">
