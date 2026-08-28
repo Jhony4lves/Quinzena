@@ -7,7 +7,8 @@ const defaultState = {
   version: SCHEMA_VERSION,
   settings: { ...Core.DEFAULT_SETTINGS },
   bills: [],
-  filter: 'all'
+  filter: 'all',
+  onboarded: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -26,7 +27,8 @@ function migrateState(raw) {
     version: SCHEMA_VERSION,
     settings: Core.normalizeSettings({ ...defaultState.settings, ...(raw.settings || {}) }),
     bills: Array.isArray(raw.bills) ? raw.bills.map(bill => Core.normalizeBill(bill, period)) : [],
-    filter: ['all', 'open', 'paid'].includes(raw.filter) ? raw.filter : 'all'
+    filter: ['all', 'open', 'paid'].includes(raw.filter) ? raw.filter : 'all',
+    onboarded: raw.onboarded === true || Number(raw?.settings?.salary || 0) > 0
   };
 }
 
@@ -136,6 +138,7 @@ function renderCycles(currentKey, period) {
 }
 
 function renderBills(period = currentPeriod()) {
+  document.querySelectorAll('.segment').forEach(button => button.classList.toggle('active', button.dataset.filter === state.filter));
   const host = $('billsList');
   host.innerHTML = '';
   const filtered = activeBills()
@@ -223,6 +226,29 @@ function validateSettingsForm() {
 
 $('openSettings').addEventListener('click', openSettings);
 $('addBillBtn').addEventListener('click', () => $('billDialog').showModal());
+$('startOnboardingBtn').addEventListener('click', () => {
+  state.onboarded = true;
+  persist();
+  $('welcomeDialog').close();
+  setTimeout(openSettings, 80);
+});
+$('loadDemoBtn').addEventListener('click', () => {
+  const period = currentPeriod();
+  state = {
+    ...cloneDefaultState(),
+    onboarded: true,
+    settings: { salary: 3200, payDay1: 5, payDay2: 20, split1: 60, split2: 40 },
+    bills: [
+      { id: 'demo-moradia', name: 'Aluguel', amount: 900, dueDay: 8, category: 'Moradia', recurring: true, paidPeriods: [] },
+      { id: 'demo-internet', name: 'Internet', amount: 119.90, dueDay: 12, category: 'Moradia', recurring: true, paidPeriods: [] },
+      { id: 'demo-energia', name: 'Energia', amount: 185, dueDay: 22, category: 'Moradia', recurring: true, paidPeriods: [] },
+      { id: 'demo-curso', name: 'Curso', amount: 280, dueDay: 25, category: 'Educação', recurring: true, paidPeriods: [] }
+    ].map(bill => Core.normalizeBill(bill, period))
+  };
+  persist();
+  $('welcomeDialog').close();
+  render();
+});
 ['salaryInput', 'payDay1', 'payDay2', 'split1', 'split2'].forEach(id => $(id).addEventListener('input', validateSettingsForm));
 
 $('settingsForm').addEventListener('submit', (event) => {
@@ -262,6 +288,17 @@ document.querySelectorAll('.segment').forEach(button => button.addEventListener(
   renderBills();
 }));
 
+$('csvExportBtn').addEventListener('click', () => {
+  const csv = '\ufeff' + Core.billsToCsv(state.bills, state.settings, currentPeriod());
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `quinzena-contas-${currentPeriod()}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+});
+
 $('exportBtn').addEventListener('click', () => {
   const payload = { ...state, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -296,4 +333,5 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 render();
-if (!state.settings.salary) setTimeout(openSettings, 250);
+if (!state.onboarded && !state.settings.salary) setTimeout(() => $('welcomeDialog').showModal(), 180);
+else if (!state.settings.salary) setTimeout(openSettings, 250);

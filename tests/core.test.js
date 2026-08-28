@@ -55,3 +55,10 @@ test('rejeita percentuais que não somam 100 e datas iguais', () => {
   assert.equal(Core.validateSettings({ ...settings, payDay2: 1 }).ok, false);
   assert.equal(Core.validateSettings(settings).ok, true);
 });
+
+test('exporta CSV com ciclo, recorrência e status do mês', () => {
+  const paid = Core.setBillPaid(bill({ name: 'Internet; Casa', amount: 119.9, dueDay: 20 }), period, true);
+  const csv = Core.billsToCsv([paid], settings, period);
+  assert.match(csv, /Descrição;Valor;Vencimento;Categoria;Ciclo;Recorrente;Status/);
+  assert.match(csv, /"Internet; Casa";119,90;20;Moradia;2º pagamento;Sim;Paga/);
+});

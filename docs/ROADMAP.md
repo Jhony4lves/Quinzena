@@ -9,14 +9,14 @@
 - [x] Recorrência mensal sem carregar “paga” para o mês seguinte.
 - [x] Migração da v0.1.
 - [x] Testes unitários do núcleo financeiro.
-- [ ] Onboarding guiado.
+- [x] Onboarding guiado.
 - [ ] QA real no Chrome Android.
 
 ## Fase 2 — Pacote vendável (01–04/09)
 - [x] Planilha bônus criada localmente (não publicar no repositório público).
 - [x] Guia PDF curto criado localmente (não publicar no repositório público).
-- [ ] Dados de demonstração seguros.
-- [ ] Exportação CSV.
+- [x] Dados de demonstração seguros.
+- [x] Exportação CSV.
 - [x] Política de privacidade provisória.
 - [ ] Revisão jurídica/comercial básica da política e termos.
 

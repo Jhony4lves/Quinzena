@@ -121,3 +121,14 @@ input:focus, select:focus { border-color: rgba(119,242,179,.55); box-shadow: 0 0
   .utility-card { flex-direction: column; align-items: stretch; }
   .utility-actions > * { flex: 1; justify-content: center; text-align: center; }
 }
+
+.welcome-card { gap: 20px; }
+.welcome-mark { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 18px; font-size: 1.5rem; font-weight: 950; color: #05140c; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); box-shadow: 0 14px 38px rgba(54,217,142,.20); }
+.welcome-copy { line-height: 1.55; margin-top: 8px; }
+.welcome-steps { display: grid; gap: 10px; }
+.welcome-steps > div { display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,.025); }
+.welcome-steps b { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: #06150d; background: var(--accent); }
+.welcome-steps span { color: #cbd5e1; font-size: .88rem; }
+.onboarding-actions { justify-content: stretch; }
+.onboarding-actions > * { flex: 1; }
+@media (max-width: 520px) { .onboarding-actions { flex-direction: column-reverse; } }
