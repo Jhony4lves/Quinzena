@@ -123,6 +123,13 @@
       .reduce((sum, bill) => sum + bill.amount, 0));
   }
 
+  function recurringBillTotalForCycle(key, bills = [], settings = {}, period = periodKey()) {
+    return roundMoney(activeBills(bills, period)
+      .filter(bill => bill.recurring)
+      .filter(bill => cycleForDueDay(bill.dueDay, settings) === key)
+      .reduce((sum, bill) => sum + bill.amount, 0));
+  }
+
   function openBillTotalForCycle(key, bills = [], settings = {}, period = periodKey()) {
     return roundMoney(activeBills(bills, period)
       .filter(bill => cycleForDueDay(bill.dueDay, settings) === key)
@@ -138,13 +145,65 @@
     return roundMoney(incomeForCycle(key, settings) - billTotalForCycle(key, bills, settings, period));
   }
 
+  function recurringBalanceForCycle(key, bills = [], settings = {}, period = periodKey()) {
+    return roundMoney(incomeForCycle(key, settings) - recurringBillTotalForCycle(key, bills, settings, period));
+  }
+
+  function previousCycleKey(key, settings = {}) {
+    const ordered = normalizedPaydays(settings).map(pay => pay.key);
+    const index = ordered.indexOf(key);
+    if (index < 0) return ordered[0];
+    return ordered[(index - 1 + ordered.length) % ordered.length];
+  }
+
+  function automaticReservePlan(bills = [], settings = {}, period = periodKey()) {
+    const ordered = normalizedPaydays(settings).map(pay => pay.key);
+    const recurringBalances = Object.fromEntries(
+      ordered.map(key => [key, recurringBalanceForCycle(key, bills, settings, period)])
+    );
+
+    return ordered.flatMap(toKey => {
+      const required = roundMoney(Math.max(0, -recurringBalances[toKey]));
+      if (!required) return [];
+      const fromKey = previousCycleKey(toKey, settings);
+      const sourceSurplus = roundMoney(Math.max(0, recurringBalances[fromKey]));
+      const amount = roundMoney(Math.min(required, sourceSurplus));
+      return [{
+        fromKey,
+        toKey,
+        required,
+        amount,
+        uncovered: roundMoney(required - amount)
+      }];
+    });
+  }
+
+  function reserveIncomingForCycle(key, bills = [], settings = {}, period = periodKey()) {
+    return roundMoney(automaticReservePlan(bills, settings, period)
+      .filter(item => item.toKey === key)
+      .reduce((sum, item) => sum + item.amount, 0));
+  }
+
+  function reserveOutgoingForCycle(key, bills = [], settings = {}, period = periodKey()) {
+    return roundMoney(automaticReservePlan(bills, settings, period)
+      .filter(item => item.fromKey === key)
+      .reduce((sum, item) => sum + item.amount, 0));
+  }
+
+  function plannedAvailableForCycle(key, bills = [], settings = {}, period = periodKey()) {
+    const base = availableForCycle(key, bills, settings, period);
+    const incoming = reserveIncomingForCycle(key, bills, settings, period);
+    const outgoing = reserveOutgoingForCycle(key, bills, settings, period);
+    return roundMoney(base + incoming - outgoing);
+  }
+
   function monthBalance(bills = [], settings = {}, period = periodKey()) {
     return roundMoney(normalizeSettings(settings).salary - monthBillTotal(bills, period));
   }
 
   function csvEscape(value) {
     const text = String(value ?? '');
-    return /[;\n\r"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    return /[;\n\r\"]/.test(text) ? `\"${text.replace(/\"/g, '\"\"')}\"` : text;
   }
 
   function billsToCsv(bills = [], settings = {}, period = periodKey()) {
@@ -183,9 +242,16 @@
     isBillPaid,
     setBillPaid,
     billTotalForCycle,
+    recurringBillTotalForCycle,
     openBillTotalForCycle,
     monthBillTotal,
     availableForCycle,
+    recurringBalanceForCycle,
+    previousCycleKey,
+    automaticReservePlan,
+    reserveIncomingForCycle,
+    reserveOutgoingForCycle,
+    plannedAvailableForCycle,
     monthBalance,
     billsToCsv
   };

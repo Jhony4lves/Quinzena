@@ -62,3 +62,38 @@ test('exporta CSV com ciclo, recorrência e status do mês', () => {
   assert.match(csv, /Descrição;Valor;Vencimento;Categoria;Ciclo;Recorrente;Status/);
   assert.match(csv, /"Internet; Casa";119,90;20;Moradia;2º pagamento;Sim;Paga/);
 });
+
+test('reserva no segundo pagamento o déficit recorrente do primeiro pagamento seguinte', () => {
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const faculdade = Core.normalizeBill({
+    id: 'faculdade', name: 'Faculdade', amount: 1560, dueDay: 14,
+    category: 'Educação', recurring: true, paidPeriods: []
+  }, period);
+
+  const plan = Core.automaticReservePlan([faculdade], twoPaySettings, period);
+  assert.deepEqual(plan, [{ fromKey: 'p2', toKey: 'p1', required: 20, amount: 20, uncovered: 0 }]);
+  assert.equal(Core.availableForCycle('p1', [faculdade], twoPaySettings, period), -20);
+  assert.equal(Core.plannedAvailableForCycle('p1', [faculdade], twoPaySettings, period), 0);
+  assert.equal(Core.plannedAvailableForCycle('p2', [faculdade], twoPaySettings, period), 640);
+  assert.equal(Core.monthBalance([faculdade], twoPaySettings, period), 640);
+});
+
+test('despesa não recorrente não cria reserva automática para meses futuros', () => {
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const compraUnica = Core.normalizeBill({
+    id: 'unica', name: 'Compra única', amount: 1560, dueDay: 14,
+    category: 'Outros', recurring: false, activePeriod: period, paidPeriods: []
+  }, period);
+
+  assert.deepEqual(Core.automaticReservePlan([compraUnica], twoPaySettings, period), []);
+  assert.equal(Core.plannedAvailableForCycle('p1', [compraUnica], twoPaySettings, period), -20);
+});
+
+test('informa déficit recorrente descoberto quando o ciclo anterior não consegue financiar tudo', () => {
+  const tightSettings = { salary: 1000, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const p1Bill = bill({ id: 'p1', amount: 850, dueDay: 10 });
+  const p2Bill = bill({ id: 'p2', amount: 250, dueDay: 20 });
+  const plan = Core.automaticReservePlan([p1Bill, p2Bill], tightSettings, period);
+  assert.equal(plan.length, 1);
+  assert.deepEqual(plan[0], { fromKey: 'p2', toKey: 'p1', required: 150, amount: 50, uncovered: 100 });
+});
