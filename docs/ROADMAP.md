@@ -28,6 +28,11 @@
 - [ ] Cupom/preço de lançamento.
 
 ## Fase 4 — QA e lançamento (08–10/09)
+- [x] Ícones Android raster 192x192 e 512x512.
+- [x] Cache PWA versionado sem alterar armazenamento financeiro local.
+- [x] Contrato de instalação PWA coberto pela QA automática.
+- [x] Workflow de deploy GitHub Pages preparado.
+- [ ] Habilitar GitHub Pages para GitHub Actions, se a primeira publicação exigir configuração manual.
 - [ ] Teste Android/Chrome.
 - [ ] Teste desktop.
 - [ ] Teste instalação PWA/offline.
