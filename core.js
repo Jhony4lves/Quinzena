@@ -142,6 +142,30 @@
     return roundMoney(normalizeSettings(settings).salary - monthBillTotal(bills, period));
   }
 
+  function csvEscape(value) {
+    const text = String(value ?? '');
+    return /[;\n\r"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function billsToCsv(bills = [], settings = {}, period = periodKey()) {
+    const header = ['Descrição', 'Valor', 'Vencimento', 'Categoria', 'Ciclo', 'Recorrente', 'Status'];
+    const rows = activeBills(bills, period)
+      .sort((a, b) => a.dueDay - b.dueDay)
+      .map(bill => {
+        const cycle = payConfigByKey(cycleForDueDay(bill.dueDay, settings), settings).label;
+        return [
+          bill.name,
+          bill.amount.toFixed(2).replace('.', ','),
+          String(bill.dueDay),
+          bill.category,
+          cycle,
+          bill.recurring ? 'Sim' : 'Não',
+          isBillPaid(bill, period) ? 'Paga' : 'Aberta'
+        ];
+      });
+    return [header, ...rows].map(row => row.map(csvEscape).join(';')).join('\r\n');
+  }
+
   return {
     DEFAULT_SETTINGS,
     roundMoney,
@@ -162,6 +186,7 @@
     openBillTotalForCycle,
     monthBillTotal,
     availableForCycle,
-    monthBalance
+    monthBalance,
+    billsToCsv
   };
 });
