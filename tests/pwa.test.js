@@ -18,18 +18,19 @@ test('manifest está preparado para instalação standalone', () => {
   assert.ok(manifest.short_name);
 });
 
-test('manifest oferece ícones 192 e 512 e os arquivos existem', () => {
+test('manifest oferece PNGs 192 e 512 maskable e os arquivos existem', () => {
   const sizes = new Map(manifest.icons.map(icon => [icon.sizes, icon]));
   for (const size of ['192x192', '512x512']) {
     const icon = sizes.get(size);
     assert.ok(icon, `ícone ${size} ausente`);
+    assert.equal(icon.type, 'image/png');
     assert.match(icon.purpose || '', /maskable/);
     assert.ok(fs.existsSync(path.join(root, icon.src)), `${icon.src} não existe`);
   }
 });
 
 test('service worker precacheia shell e ícones da instalação', () => {
-  for (const asset of ['./index.html', './styles.css', './core.js', './app.js', './manifest.webmanifest', './icons/icon-192.svg', './icons/icon-512.svg']) {
+  for (const asset of ['./index.html', './styles.css', './core.js', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png']) {
     assert.ok(sw.includes(`'${asset}'`), `${asset} não está no precache`);
   }
   assert.match(sw, /quinzena-v\d+\.\d+\.\d+/);
