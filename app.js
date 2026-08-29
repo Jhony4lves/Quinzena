@@ -1,13 +1,15 @@
-const STORAGE_KEY = 'quinzena.v0.2';
-const LEGACY_STORAGE_KEY = 'quinzena.v0.1';
-const SCHEMA_VERSION = 2;
+const STORAGE_KEY = 'quinzena.v0.3';
+const LEGACY_STORAGE_KEYS = ['quinzena.v0.2', 'quinzena.v0.1'];
+const SCHEMA_VERSION = 3;
 const Core = window.QuinzenaCore;
 
 const defaultState = {
   version: SCHEMA_VERSION,
   settings: { ...Core.DEFAULT_SETTINGS },
   bills: [],
+  movements: [],
   filter: 'all',
+  movementFilter: 'all',
   onboarded: false
 };
 
@@ -16,6 +18,15 @@ const money = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', cur
 const today = () => new Date();
 const currentPeriod = () => Core.periodKey(today());
 let editingBillId = null;
+let viewPeriod = currentPeriod();
+let installPrompt = null;
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function cloneDefaultState() {
   return JSON.parse(JSON.stringify(defaultState));
@@ -28,7 +39,9 @@ function migrateState(raw) {
     version: SCHEMA_VERSION,
     settings: Core.normalizeSettings({ ...defaultState.settings, ...(raw.settings || {}) }),
     bills: Array.isArray(raw.bills) ? raw.bills.map(bill => Core.normalizeBill(bill, period)) : [],
+    movements: Array.isArray(raw.movements) ? raw.movements.map(Core.normalizeMovement) : [],
     filter: ['all', 'open', 'paid'].includes(raw.filter) ? raw.filter : 'all',
+    movementFilter: ['all', 'expense', 'income'].includes(raw.movementFilter) ? raw.movementFilter : 'all',
     onboarded: raw.onboarded === true || Number(raw?.settings?.salary || 0) > 0
   };
 }
@@ -37,14 +50,15 @@ function loadState() {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     if (current) return migrateState(JSON.parse(current));
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy) {
+    for (const key of LEGACY_STORAGE_KEYS) {
+      const legacy = localStorage.getItem(key);
+      if (!legacy) continue;
       const migrated = migrateState(JSON.parse(legacy));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
       return migrated;
     }
   } catch {
-    // Se o armazenamento estiver corrompido, inicia limpo sem apagar o original.
+    // Mantém o app utilizável mesmo se um backup local antigo estiver corrompido.
   }
   return cloneDefaultState();
 }
@@ -56,51 +70,82 @@ function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function activeBills() {
-  return Core.activeBills(state.bills, currentPeriod());
+function activeBills(period = currentPeriod()) {
+  return Core.activeBills(state.bills, period);
+}
+
+function activeMovements(period = currentPeriod()) {
+  return Core.movementsInPeriod(state.movements, period);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 }
 
 function formatDateShort(date) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date).replace('.', '');
 }
 
-function formatPeriod(period) {
+function formatDateLong(date) {
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date).replace('.', '');
+}
+
+function formatPeriod(period, withYear = false) {
   const [year, month] = String(period).split('-').map(Number);
   if (!year || !month) return period;
-  return new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date(year, month - 1, 1));
+  const result = new Intl.DateTimeFormat('pt-BR', withYear ? { month: 'long', year: 'numeric' } : { month: 'long' }).format(new Date(year, month - 1, 1));
+  return result.charAt(0).toUpperCase() + result.slice(1);
+}
+
+function dateForPeriodDay(period, day) {
+  const [year, month] = String(period).split('-').map(Number);
+  const last = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(Number(day), last));
+}
+
+function currentSnapshot() {
+  const period = currentPeriod();
+  const key = Core.currentCycleKey(state.settings, today());
+  const movement = Core.movementTotalsForCycle(key, state.movements, state.settings, period);
+  const baseIncome = Core.incomeForCycle(key, state.settings);
+  return {
+    period,
+    key,
+    movement,
+    baseIncome,
+    income: Core.roundMoney(baseIncome + movement.income),
+    bills: Core.billTotalForCycle(key, state.bills, state.settings, period),
+    openBills: Core.openBillTotalForCycle(key, state.bills, state.settings, period),
+    reserveIncoming: Core.reserveIncomingForCycle(key, state.bills, state.settings, period),
+    reserveOutgoing: Core.reserveOutgoingForCycle(key, state.bills, state.settings, period),
+    available: Core.actualAvailableForCycle(key, state.bills, state.movements, state.settings, period),
+    monthBalance: Core.effectiveMonthBalance(state.bills, state.movements, state.settings, period)
+  };
 }
 
 function render() {
-  const period = currentPeriod();
+  const snapshot = currentSnapshot();
   const salary = Number(state.settings.salary);
-  const currentKey = Core.currentCycleKey(state.settings, today());
-  const currentCfg = Core.payConfigByKey(currentKey, state.settings);
-  const cycleIncome = Core.incomeForCycle(currentKey, state.settings);
-  const cycleBills = Core.billTotalForCycle(currentKey, state.bills, state.settings, period);
-  const cycleOpenBills = Core.openBillTotalForCycle(currentKey, state.bills, state.settings, period);
-  const available = Core.plannedAvailableForCycle(currentKey, state.bills, state.settings, period);
-  const reserveIncoming = Core.reserveIncomingForCycle(currentKey, state.bills, state.settings, period);
-  const reserveOutgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
-  const monthBalance = Core.monthBalance(state.bills, state.settings, period);
-  const reservePlan = Core.automaticReservePlan(state.bills, state.settings, period);
-  const currentGap = reservePlan.find(item => item.toKey === currentKey);
+  const cfg = Core.payConfigByKey(snapshot.key, state.settings);
+  const reservePlan = Core.automaticReservePlan(state.bills, state.settings, snapshot.period);
+  const currentGap = reservePlan.find(item => item.toKey === snapshot.key);
   const nextPay = Core.nextPaymentDate(today(), state.settings);
 
-  $('cycleLabel').textContent = `${currentCfg.label.toUpperCase()} · ${currentCfg.pct}%`;
-  $('availableAmount').textContent = money(available);
-  $('cycleIncome').textContent = money(cycleIncome);
-  $('cycleBills').textContent = money(cycleBills);
-  $('cycleBills').title = cycleOpenBills > 0 ? `${money(cycleOpenBills)} ainda em aberto` : 'Todas as contas deste ciclo estão pagas';
-  $('monthBalance').textContent = money(monthBalance);
+  $('cycleLabel').textContent = `${cfg.label.toUpperCase()} · ${cfg.pct}%`;
+  $('availableAmount').textContent = money(snapshot.available);
+  $('cycleIncome').textContent = money(snapshot.income);
+  $('cycleBills').textContent = money(snapshot.bills);
+  $('cycleBills').title = snapshot.openBills > 0 ? `${money(snapshot.openBills)} ainda em aberto` : 'Todas as contas deste ciclo estão pagas';
+  $('cycleVariable').textContent = money(snapshot.movement.expense);
+  $('monthBalance').textContent = money(snapshot.monthBalance);
   $('nextPayDate').textContent = `Próximo pagamento · ${formatDateShort(nextPay)}`;
 
-  if (reserveOutgoing > 0) {
-    $('availableCaption').textContent = `disponível após contas e ${money(reserveOutgoing)} reservados para o próximo ciclo`;
-  } else if (reserveIncoming > 0) {
-    $('availableCaption').textContent = `disponível já contando ${money(reserveIncoming)} da reserva do ciclo anterior`;
-  } else {
-    $('availableCaption').textContent = 'disponível depois das contas planejadas';
-  }
+  const caption = [];
+  if (snapshot.movement.expense > 0) caption.push(`${money(snapshot.movement.expense)} em gastos lançados`);
+  if (snapshot.movement.income > 0) caption.push(`${money(snapshot.movement.income)} em entradas extras`);
+  if (snapshot.reserveOutgoing > 0) caption.push(`${money(snapshot.reserveOutgoing)} protegidos para o próximo ciclo`);
+  if (snapshot.reserveIncoming > 0) caption.push(`${money(snapshot.reserveIncoming)} recebidos da reserva anterior`);
+  $('availableCaption').textContent = caption.length ? `livre após ${caption.join(' · ')}` : 'disponível depois das contas planejadas';
 
   if (!salary) {
     $('healthText').textContent = 'Configure sua renda';
@@ -108,45 +153,43 @@ function render() {
   } else if (currentGap?.uncovered > 0) {
     $('healthText').textContent = `Ainda faltam ${money(currentGap.uncovered)}`;
     $('healthText').style.color = 'var(--danger)';
-  } else if (available < 0) {
-    $('healthText').textContent = `Faltam ${money(Math.abs(available))}`;
+  } else if (snapshot.available < 0) {
+    $('healthText').textContent = `Ciclo no vermelho: ${money(Math.abs(snapshot.available))}`;
     $('healthText').style.color = 'var(--danger)';
-  } else if (available < cycleIncome * .15) {
-    $('healthText').textContent = reserveIncoming > 0 ? 'Ciclo equilibrado pela reserva' : 'Ciclo apertado';
+  } else if (snapshot.available < snapshot.income * .15) {
+    $('healthText').textContent = 'Margem curta até receber';
     $('healthText').style.color = 'var(--warning)';
   } else {
-    $('healthText').textContent = reserveOutgoing > 0 ? 'Reserva do próximo ciclo protegida' : 'Ciclo saudável';
+    $('healthText').textContent = snapshot.reserveOutgoing > 0 ? 'Reserva protegida' : 'Ciclo saudável';
     $('healthText').style.color = 'var(--accent)';
   }
 
-  renderDailyDecision(currentKey, period, available);
+  renderDailyDecision(snapshot);
   renderNextMonth();
-  renderReservePlan(period);
-  renderCycles(currentKey, period);
-  renderBills(period);
+  renderReservePlan(snapshot.period);
+  renderCycles(snapshot.key, snapshot.period);
+  renderInsights(snapshot);
+  renderMonthBrowser();
+  renderTimeline();
+  renderMovements();
+  renderBills(snapshot.period);
 }
 
-function renderDailyDecision(currentKey, period, available) {
+function renderDailyDecision(snapshot) {
   const salary = Number(state.settings.salary);
   const days = Core.daysUntilNextPayment(today(), state.settings);
   const nextPay = Core.nextPaymentDate(today(), state.settings);
-  const daily = Core.dailySpendingLimit(available, today(), state.settings);
-  const outgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
-
+  const daily = Core.dailySpendingLimit(snapshot.available, today(), state.settings);
   $('dailyLimit').textContent = money(daily);
 
   if (!salary) {
     $('dailyLimitCaption').textContent = 'Configure sua renda para calcular seu limite diário.';
-    return;
+  } else if (snapshot.available <= 0) {
+    $('dailyLimitCaption').textContent = `Não há margem livre até ${formatDateShort(nextPay)}. O limite volta a crescer quando entrar dinheiro ou o planejamento for ajustado.`;
+  } else {
+    const registered = snapshot.movement.expense > 0 ? ` Já descontamos ${money(snapshot.movement.expense)} de gastos lançados neste ciclo.` : ' Registre os gastos do dia para manter esse número verdadeiro.';
+    $('dailyLimitCaption').textContent = `${days} ${days === 1 ? 'dia' : 'dias'} até ${formatDateShort(nextPay)}.${registered}`;
   }
-
-  if (available <= 0) {
-    $('dailyLimitCaption').textContent = `Seu ciclo já está sem margem livre até ${formatDateShort(nextPay)}. Primeiro ajuste contas ou renda.`;
-    return;
-  }
-
-  const protectedText = outgoing > 0 ? ` ${money(outgoing)} de reserva já ficaram fora dessa conta.` : '';
-  $('dailyLimitCaption').textContent = `${days} ${days === 1 ? 'dia' : 'dias'} até ${formatDateShort(nextPay)}.${protectedText} É uma média do saldo planejado; gastos variáveis ainda não registrados reduzem esse limite.`;
 }
 
 function renderNextMonth() {
@@ -154,23 +197,18 @@ function renderNextMonth() {
   const projection = Core.projectionForPeriod(state.bills, state.settings, nextPeriod);
   const salary = Number(state.settings.salary);
   const monthName = formatPeriod(nextPeriod);
-
   if (!salary) {
     $('nextMonthBalance').textContent = 'Configure sua renda';
     $('nextMonthCaption').textContent = 'As recorrências aparecem aqui antes da virada do mês.';
     return;
   }
-
-  $('nextMonthBalance').textContent = projection.balance >= 0
-    ? `${money(projection.balance)} livres`
-    : `${money(Math.abs(projection.balance))} faltando`;
-
+  $('nextMonthBalance').textContent = projection.balance >= 0 ? `${money(projection.balance)} livres` : `${money(Math.abs(projection.balance))} faltando`;
   if (projection.uncovered > 0) {
-    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas recorrentes e ${money(projection.uncovered)} ainda sem cobertura entre os dois pagamentos.`;
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas e ${money(projection.uncovered)} ainda sem cobertura entre pagamentos.`;
   } else if (projection.reserveTotal > 0) {
-    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas recorrentes; ${money(projection.reserveTotal)} serão protegidos de um pagamento para o outro.`;
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas; ${money(projection.reserveTotal)} precisarão ser protegidos entre pagamentos.`;
   } else {
-    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} já previstos em contas recorrentes, sem reserva extra necessária.`;
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas recorrentes, sem reserva extra necessária.`;
   }
 }
 
@@ -178,43 +216,21 @@ function renderReservePlan(period) {
   const card = $('reserveCard');
   const host = $('reserveList');
   const plan = Core.automaticReservePlan(state.bills, state.settings, period);
-
   if (!plan.length) {
     card.hidden = true;
     host.innerHTML = '';
     return;
   }
-
   card.hidden = false;
   host.innerHTML = plan.map(item => {
     const from = Core.payConfigByKey(item.fromKey, state.settings);
     const to = Core.payConfigByKey(item.toKey, state.settings);
-    const recurringBills = activeBills()
-      .filter(bill => bill.recurring && Core.cycleForDueDay(bill.dueDay, state.settings) === item.toKey)
-      .sort((a, b) => b.amount - a.amount);
-    const billContext = recurringBills.length === 1
-      ? `A conta recorrente “${escapeHtml(recurringBills[0].name)}” deixa`
-      : `As contas recorrentes do ${to.label} deixam`;
-
+    const recurringBills = activeBills(period).filter(bill => bill.recurring && Core.cycleForDueDay(bill.dueDay, state.settings) === item.toKey).sort((a, b) => b.amount - a.amount);
+    const context = recurringBills.length === 1 ? `“${escapeHtml(recurringBills[0].name)}” deixa` : `As recorrências do ${to.label} deixam`;
     if (item.amount <= 0) {
-      return `<div class="reserve-item danger">
-        <div class="reserve-flow"><strong>${billContext} um déficit de ${money(item.required)}.</strong><span>O ${from.label} também não tem sobra recorrente para criar essa reserva.</span></div>
-        <b>${money(item.uncovered)} descobertos</b>
-      </div>`;
+      return `<div class="reserve-item danger"><div class="reserve-flow"><strong>${context} um déficit de ${money(item.required)}.</strong><span>O ${from.label} também não tem sobra para financiar a diferença.</span></div><b>${money(item.uncovered)} descobertos</b></div>`;
     }
-
-    const uncovered = item.uncovered > 0
-      ? `<span class="reserve-uncovered">Ainda ficam ${money(item.uncovered)} sem cobertura mensal.</span>`
-      : `<span>Assim o próximo ${to.label} já começa com esse valor protegido.</span>`;
-
-    return `<div class="reserve-item ${item.uncovered > 0 ? 'warning' : ''}">
-      <div class="reserve-flow">
-        <strong>${billContext} ${money(item.required)} faltando todo mês.</strong>
-        <span>Separe ${money(item.amount)} do ${from.label} para o próximo ${to.label}.</span>
-        ${uncovered}
-      </div>
-      <b>Reservar ${money(item.amount)}</b>
-    </div>`;
+    return `<div class="reserve-item ${item.uncovered > 0 ? 'warning' : ''}"><div class="reserve-flow"><strong>${context} ${money(item.required)} faltando todo mês.</strong><span>Separe ${money(item.amount)} do ${from.label} para o próximo ${to.label}.</span>${item.uncovered > 0 ? `<span class="reserve-uncovered">Ainda ficam ${money(item.uncovered)} sem cobertura.</span>` : '<span>Essa reserva não é gasto: continua sendo seu dinheiro, só fica protegido.</span>'}</div><b>Reservar ${money(item.amount)}</b></div>`;
   }).join('');
 }
 
@@ -222,96 +238,154 @@ function renderCycles(currentKey, period) {
   const host = $('cycleColumns');
   host.innerHTML = '';
   const plan = Core.automaticReservePlan(state.bills, state.settings, period);
-
   for (const key of ['p1', 'p2']) {
     const cfg = Core.payConfigByKey(key, state.settings);
-    const bills = activeBills().filter(bill => Core.cycleForDueDay(bill.dueDay, state.settings) === key);
-    const plannedAvailable = Core.plannedAvailableForCycle(key, state.bills, state.settings, period);
+    const bills = activeBills(period).filter(bill => Core.cycleForDueDay(bill.dueDay, state.settings) === key);
+    const actualAvailable = Core.actualAvailableForCycle(key, state.bills, state.movements, state.settings, period);
+    const movements = Core.movementTotalsForCycle(key, state.movements, state.settings, period);
     const incoming = plan.find(item => item.toKey === key && item.amount > 0);
     const outgoing = plan.find(item => item.fromKey === key && item.amount > 0);
     const panel = document.createElement('article');
     panel.className = `cycle-panel ${key === currentKey ? 'current' : ''}`;
-
-    const billRows = bills.length
-      ? bills.sort((a,b)=>a.dueDay-b.dueDay).map(bill => {
-          const paid = Core.isBillPaid(bill, period);
-          return `<div class="cycle-bill ${paid ? 'paid' : ''}"><span>${paid ? '✓ ' : ''}dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.name)}</span><span>${money(bill.amount)}</span></div>`;
-        }).join('')
-      : `<div class="empty-state"><span>Nenhuma conta alocada.</span></div>`;
-
-    const incomingRow = incoming
-      ? `<div class="cycle-bill cycle-reserve incoming"><span>↳ reserva do ${Core.payConfigByKey(incoming.fromKey, state.settings).label}</span><span>+ ${money(incoming.amount)}</span></div>`
-      : '';
-    const outgoingRow = outgoing
-      ? `<div class="cycle-bill cycle-reserve outgoing"><span>↗ reservar p/ próximo ${Core.payConfigByKey(outgoing.toKey, state.settings).label}</span><span>- ${money(outgoing.amount)}</span></div>`
-      : '';
-
-    panel.innerHTML = `
-      <header>
-        <div><strong>${cfg.label}</strong><span>dia ${cfg.day} · ${cfg.pct}% da renda</span></div>
-        <strong class="cycle-total">${money(plannedAvailable)}</strong>
-      </header>
-      ${billRows}
-      ${incomingRow}
-      ${outgoingRow}
-    `;
+    const billRows = bills.length ? bills.sort((a,b)=>a.dueDay-b.dueDay).map(bill => {
+      const paid = Core.isBillPaid(bill, period);
+      return `<div class="cycle-bill ${paid ? 'paid' : ''}"><span>${paid ? '✓ ' : ''}dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.name)}</span><span>${money(bill.amount)}</span></div>`;
+    }).join('') : `<div class="empty-state compact"><span>Nenhuma conta alocada.</span></div>`;
+    panel.innerHTML = `<header><div><strong>${cfg.label}</strong><span>dia ${cfg.day} · ${cfg.pct}% da renda</span></div><strong class="cycle-total">${money(actualAvailable)}</strong></header>${billRows}${movements.income ? `<div class="cycle-bill movement-income"><span>+ entradas extras</span><span>+ ${money(movements.income)}</span></div>` : ''}${movements.expense ? `<div class="cycle-bill movement-expense"><span>− gastos lançados</span><span>- ${money(movements.expense)}</span></div>` : ''}${incoming ? `<div class="cycle-bill cycle-reserve incoming"><span>↳ reserva anterior</span><span>+ ${money(incoming.amount)}</span></div>` : ''}${outgoing ? `<div class="cycle-bill cycle-reserve outgoing"><span>↗ proteger próximo ciclo</span><span>- ${money(outgoing.amount)}</span></div>` : ''}`;
     host.appendChild(panel);
   }
+}
+
+function renderInsights(snapshot) {
+  const ratio = Core.recurringCommitmentRatio(state.bills, state.settings, snapshot.period);
+  $('commitmentRatio').textContent = `${ratio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+  $('commitmentHint').textContent = ratio >= 80 ? 'atenção: pouca flexibilidade' : 'da renda em recorrências';
+
+  const openBills = activeBills(snapshot.period).filter(bill => !Core.isBillPaid(bill, snapshot.period));
+  const openAmount = Core.roundMoney(openBills.reduce((sum, bill) => sum + bill.amount, 0));
+  $('openBillsAmount').textContent = money(openAmount);
+  $('openBillsCount').textContent = `${openBills.length} ${openBills.length === 1 ? 'conta' : 'contas'}`;
+
+  const top = Core.topExpenseCategory(state.movements, snapshot.period);
+  $('topExpenseCategory').textContent = top ? top.category : '—';
+  $('topExpenseHint').textContent = top ? `${money(top.amount)} neste mês` : 'nenhum gasto lançado';
+
+  const largest = Core.largestRecurringBill(state.bills, snapshot.period);
+  $('largestRecurring').textContent = largest ? largest.name : '—';
+  $('largestRecurringHint').textContent = largest ? `${money(largest.amount)} por mês` : 'nenhuma recorrência';
+
+  const alert = $('smartAlert');
+  const uncovered = Core.automaticReservePlan(state.bills, state.settings, snapshot.period).reduce((sum, item) => sum + item.uncovered, 0);
+  if (snapshot.available < 0) {
+    alert.hidden = false;
+    alert.className = 'smart-alert danger';
+    alert.innerHTML = `<strong>Ciclo no vermelho.</strong><span>Faltam ${money(Math.abs(snapshot.available))} mesmo depois das reservas e movimentos registrados.</span>`;
+  } else if (uncovered > 0) {
+    alert.hidden = false;
+    alert.className = 'smart-alert warning';
+    alert.innerHTML = `<strong>Existe um déficit estrutural.</strong><span>${money(uncovered)} das recorrências ainda não conseguem ser cobertos pelos dois pagamentos.</span>`;
+  } else if (ratio >= 90) {
+    alert.hidden = false;
+    alert.className = 'smart-alert warning';
+    alert.innerHTML = `<strong>${ratio}% da renda já nasce comprometida.</strong><span>Qualquer gasto variável pesa bastante. Vale reduzir recorrências antes de assumir novas.</span>`;
+  } else {
+    alert.hidden = true;
+    alert.innerHTML = '';
+  }
+}
+
+function renderMonthBrowser() {
+  const projection = Core.projectionForPeriod(state.bills, state.settings, viewPeriod);
+  const movements = Core.movementTotalsForPeriod(state.movements, viewPeriod);
+  const effective = Core.effectiveMonthBalance(state.bills, state.movements, state.settings, viewPeriod);
+  $('viewMonthTitle').textContent = formatPeriod(viewPeriod, true);
+  $('viewMonthBills').textContent = money(projection.billsTotal);
+  $('viewMonthIncome').textContent = money(movements.income);
+  $('viewMonthExpenses').textContent = money(movements.expense);
+  $('viewMonthBalance').textContent = money(effective);
+  $('viewMonthBalance').classList.toggle('negative-text', effective < 0);
+}
+
+function renderTimeline() {
+  const host = $('timelineList');
+  const now = today();
+  now.setHours(0,0,0,0);
+  const periods = [currentPeriod(), Core.shiftPeriod(currentPeriod(), 1)];
+  const events = [];
+  for (const period of periods) {
+    const pays = [Core.payConfigByKey('p1', state.settings), Core.payConfigByKey('p2', state.settings)];
+    pays.forEach(pay => events.push({ type: 'pay', date: dateForPeriodDay(period, pay.day), title: pay.label, subtitle: `${pay.pct}% da renda`, amount: Core.incomeForCycle(pay.key, state.settings) }));
+    activeBills(period).forEach(bill => events.push({ type: 'bill', date: dateForPeriodDay(period, bill.dueDay), title: bill.name, subtitle: `${bill.category}${Core.isBillPaid(bill, period) ? ' · paga' : ''}`, amount: bill.amount, paid: Core.isBillPaid(bill, period) }));
+  }
+  const future = events.filter(event => event.date >= now).sort((a,b) => a.date - b.date || (a.type === 'pay' ? -1 : 1)).slice(0, 10);
+  if (!future.length) {
+    host.innerHTML = '<div class="empty-state"><span>Nenhum evento próximo.</span></div>';
+    return;
+  }
+  host.innerHTML = future.map(event => `<div class="timeline-row ${event.type} ${event.paid ? 'paid' : ''}"><div class="timeline-date"><b>${String(event.date.getDate()).padStart(2,'0')}</b><span>${new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(event.date).replace('.','')}</span></div><div class="timeline-copy"><strong>${escapeHtml(event.title)}</strong><span>${escapeHtml(event.subtitle)}</span></div><b class="timeline-amount ${event.type === 'pay' ? 'positive-text' : ''}">${event.type === 'pay' ? '+' : '-'} ${money(event.amount)}</b></div>`).join('');
+}
+
+function renderMovements() {
+  document.querySelectorAll('.movement-segment').forEach(button => button.classList.toggle('active', button.dataset.movementFilter === state.movementFilter));
+  const host = $('movementsList');
+  const period = currentPeriod();
+  const totals = Core.movementTotalsForPeriod(state.movements, period);
+  $('movementSummary').innerHTML = `<span><b>${money(totals.expense)}</b> gastos</span><span><b>${money(totals.income)}</b> entradas extras</span>`;
+  const items = activeMovements(period).filter(item => state.movementFilter === 'all' || item.type === state.movementFilter).sort((a,b) => b.date.localeCompare(a.date));
+  if (!items.length) {
+    host.appendChild($('emptyMovementTemplate').content.cloneNode(true));
+    return;
+  }
+  host.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = `movement-row ${item.type}`;
+    const date = new Date(`${item.date}T12:00:00`);
+    row.innerHTML = `<div class="movement-icon">${item.type === 'income' ? '+' : '−'}</div><div class="movement-copy"><strong>${escapeHtml(item.name)}</strong><span>${formatDateLong(date)} · ${escapeHtml(item.category)} · ${Core.payConfigByKey(Core.movementCycleKey(item, state.settings), state.settings).label}</span></div><b class="movement-amount ${item.type === 'income' ? 'positive-text' : ''}">${item.type === 'income' ? '+' : '-'} ${money(item.amount)}</b><button class="row-action movement-delete" type="button" aria-label="Excluir movimento">✕</button>`;
+    row.querySelector('.movement-delete').addEventListener('click', () => {
+      if (!confirm(`Excluir “${item.name}” de ${money(item.amount)}?`)) return;
+      state.movements = state.movements.filter(current => current.id !== item.id);
+      persist();
+      $('purchaseResult').hidden = true;
+      render();
+    });
+    host.appendChild(row);
+  });
 }
 
 function renderBills(period = currentPeriod()) {
   document.querySelectorAll('.segment').forEach(button => button.classList.toggle('active', button.dataset.filter === state.filter));
   const host = $('billsList');
   host.innerHTML = '';
-  const filtered = activeBills()
-    .filter(bill => {
-      if (state.filter === 'all') return true;
-      const paid = Core.isBillPaid(bill, period);
-      return state.filter === 'paid' ? paid : !paid;
-    })
-    .sort((a,b) => a.dueDay - b.dueDay);
-
+  const filtered = activeBills(period).filter(bill => {
+    if (state.filter === 'all') return true;
+    const paid = Core.isBillPaid(bill, period);
+    return state.filter === 'paid' ? paid : !paid;
+  }).sort((a,b) => a.dueDay - b.dueDay);
   if (!filtered.length) {
     host.appendChild($('emptyTemplate').content.cloneNode(true));
     return;
   }
-
-  for (const bill of filtered) {
+  filtered.forEach(bill => {
     const paid = Core.isBillPaid(bill, period);
     const row = document.createElement('div');
     row.className = `bill-row ${paid ? 'paid' : ''}`;
     const cycle = Core.payConfigByKey(Core.cycleForDueDay(bill.dueDay, state.settings), state.settings);
-    row.innerHTML = `
-      <input class="bill-check" type="checkbox" ${paid ? 'checked' : ''} aria-label="Marcar ${escapeHtml(bill.name)} como paga" />
-      <div>
-        <div class="bill-title">${escapeHtml(bill.name)}</div>
-        <div class="bill-meta">vence dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.category)} · ${cycle.label}${bill.recurring ? ' · mensal' : ' · só este mês'}</div>
-      </div>
-      <div class="bill-amount">${money(bill.amount)}</div>
-      <div class="bill-actions">
-        <button class="row-action edit-btn" type="button" aria-label="Editar ${escapeHtml(bill.name)}">Editar</button>
-        <button class="row-action delete-btn" type="button" aria-label="Excluir ${escapeHtml(bill.name)}">✕</button>
-      </div>
-    `;
+    row.innerHTML = `<input class="bill-check" type="checkbox" ${paid ? 'checked' : ''} aria-label="Marcar ${escapeHtml(bill.name)} como paga" /><div><div class="bill-title">${escapeHtml(bill.name)}</div><div class="bill-meta">vence dia ${String(bill.dueDay).padStart(2,'0')} · ${escapeHtml(bill.category)} · ${cycle.label}${bill.recurring ? ' · mensal' : ' · só este mês'}</div></div><div class="bill-amount">${money(bill.amount)}</div><div class="bill-actions"><button class="row-action edit-btn" type="button">Editar</button><button class="row-action delete-btn" type="button" aria-label="Excluir ${escapeHtml(bill.name)}">✕</button></div>`;
     row.querySelector('.bill-check').addEventListener('change', event => {
-      state.bills = state.bills.map(item => item.id === bill.id
-        ? Core.setBillPaid(item, period, event.target.checked)
-        : item);
+      state.bills = state.bills.map(item => item.id === bill.id ? Core.setBillPaid(item, period, event.target.checked) : item);
       persist();
       render();
     });
     row.querySelector('.edit-btn').addEventListener('click', () => openBillDialog(bill));
     row.querySelector('.delete-btn').addEventListener('click', () => {
+      if (!confirm(`Excluir a conta “${bill.name}”?`)) return;
       state.bills = state.bills.filter(item => item.id !== bill.id);
       persist();
       render();
     });
     host.appendChild(row);
-  }
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+  });
 }
 
 function openSettings() {
@@ -326,22 +400,15 @@ function openSettings() {
 }
 
 function settingsFromForm() {
-  return {
-    salary: Number($('salaryInput').value),
-    payDay1: Number($('payDay1').value),
-    payDay2: Number($('payDay2').value),
-    split1: Number($('split1').value),
-    split2: Number($('split2').value)
-  };
+  return { salary: Number($('salaryInput').value), payDay1: Number($('payDay1').value), payDay2: Number($('payDay2').value), split1: Number($('split1').value), split2: Number($('split2').value) };
 }
 
 function validateSettingsForm() {
   const result = Core.validateSettings(settingsFromForm());
   if (!result.splitsValid) {
-    const sum = Number($('split1').value) + Number($('split2').value);
-    $('splitHint').textContent = `Os percentuais somam ${sum}%. Precisam dar 100%.`;
+    $('splitHint').textContent = `Os percentuais somam ${Number($('split1').value) + Number($('split2').value)}%. Precisam dar 100%.`;
   } else if (!result.paydaysValid) {
-    $('splitHint').textContent = 'As duas datas de pagamento precisam ser diferentes e ficar entre os dias 1 e 28.';
+    $('splitHint').textContent = 'As duas datas precisam ser diferentes e ficar entre os dias 1 e 28.';
   } else {
     $('splitHint').textContent = 'Perfeito: datas válidas e os pagamentos somam 100%.';
   }
@@ -375,35 +442,74 @@ function openBillDialog(bill = null) {
   $('billDialog').showModal();
 }
 
+function openMovementDialog(type = 'expense') {
+  $('movementForm').reset();
+  $('movementType').value = type;
+  $('movementDate').value = localDateString();
+  $('movementCategory').value = type === 'income' ? 'Renda extra' : 'Alimentação';
+  syncMovementType();
+  $('movementDialog').showModal();
+  setTimeout(() => $('movementName').focus(), 50);
+}
+
+function syncMovementType() {
+  const income = $('movementType').value === 'income';
+  $('movementDialogTitle').textContent = income ? 'Registrar entrada extra' : 'Registrar gasto';
+  $('saveMovementBtn').textContent = income ? 'Adicionar entrada' : 'Registrar gasto';
+}
+
 function renderPurchaseResult(result, name) {
   const host = $('purchaseResult');
   const label = name ? `“${escapeHtml(name)}”` : 'Essa compra';
   host.hidden = false;
-
   if (result.status === 'fits') {
     host.className = 'simulator-result good';
-    host.innerHTML = `<strong>${label} cabe nesta quinzena.</strong><span>Depois da compra, ficam ${money(result.afterPurchase)} livres. Seu limite médio passa a ${money(result.dailyAfter)}/dia pelos próximos ${result.days} ${result.days === 1 ? 'dia' : 'dias'}.</span>`;
-    return;
-  }
-
-  if (result.status === 'invades_reserve') {
+    host.innerHTML = `<strong>${label} cabe nesta quinzena.</strong><span>Depois da compra, ficam ${money(result.afterPurchase)} livres e a média diária cai para ${money(result.dailyAfter)}.</span>`;
+  } else if (result.status === 'invades_reserve') {
     host.className = 'simulator-result warning';
-    host.innerHTML = `<strong>Só cabe quebrando uma reserva.</strong><span>${label} usaria ${money(result.reserveInvaded)} que já estão protegidos para o próximo ciclo. Financeiramente, eu não trataria esse valor como disponível.</span>`;
-    return;
+    host.innerHTML = `<strong>Só cabe quebrando uma reserva.</strong><span>${label} usaria ${money(result.reserveInvaded)} já protegidos para o próximo pagamento. O Quinzena não considera esse dinheiro livre.</span>`;
+  } else {
+    host.className = 'simulator-result danger';
+    host.innerHTML = `<strong>Não cabe nesta quinzena.</strong><span>Mesmo consumindo toda a reserva, ainda faltariam ${money(result.shortfall)}.</span>`;
   }
+}
 
-  host.className = 'simulator-result danger';
-  host.innerHTML = `<strong>Não cabe nesta quinzena.</strong><span>Mesmo consumindo toda a reserva protegida, ainda faltariam ${money(result.shortfall)} para ${label}. Melhor adiar ou reduzir o valor.</span>`;
+function downloadText(content, type, filename) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+function shareSummary() {
+  const snapshot = currentSnapshot();
+  const daily = Core.dailySpendingLimit(snapshot.available, today(), state.settings);
+  const next = Core.projectionForPeriod(state.bills, state.settings, Core.shiftPeriod(currentPeriod(), 1));
+  const text = `Quinzena — resumo\nLivre agora: ${money(snapshot.available)}\nMédia até o próximo pagamento: ${money(daily)}/dia\nReserva protegida: ${money(snapshot.reserveOutgoing)}\nPróximo mês: ${money(next.balance)} de saldo previsto`;
+  if (navigator.share) {
+    navigator.share({ title: 'Meu resumo no Quinzena', text }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => alert('Resumo copiado.'));
+  }
 }
 
 $('openSettings').addEventListener('click', openSettings);
+$('shareBtn').addEventListener('click', shareSummary);
 $('addBillBtn').addEventListener('click', () => openBillDialog());
+$('quickExpenseBtn').addEventListener('click', () => openMovementDialog('expense'));
+$('quickIncomeBtn').addEventListener('click', () => openMovementDialog('income'));
+$('movementType').addEventListener('change', syncMovementType);
+
 $('startOnboardingBtn').addEventListener('click', () => {
   state.onboarded = true;
   persist();
   $('welcomeDialog').close();
   setTimeout(openSettings, 80);
 });
+
 $('loadDemoBtn').addEventListener('click', () => {
   const period = currentPeriod();
   state = {
@@ -415,15 +521,20 @@ $('loadDemoBtn').addEventListener('click', () => {
       { id: 'demo-internet', name: 'Internet', amount: 119.90, dueDay: 12, category: 'Moradia', recurring: true, paidPeriods: [] },
       { id: 'demo-energia', name: 'Energia', amount: 185, dueDay: 22, category: 'Moradia', recurring: true, paidPeriods: [] },
       { id: 'demo-curso', name: 'Curso', amount: 280, dueDay: 25, category: 'Educação', recurring: true, paidPeriods: [] }
-    ].map(bill => Core.normalizeBill(bill, period))
+    ].map(bill => Core.normalizeBill(bill, period)),
+    movements: [
+      Core.normalizeMovement({ id: 'demo-mercado', type: 'expense', name: 'Mercado', amount: 83.40, date: localDateString(), category: 'Alimentação' }),
+      Core.normalizeMovement({ id: 'demo-freela', type: 'income', name: 'Freela', amount: 150, date: localDateString(), category: 'Renda extra' })
+    ]
   };
   persist();
   $('welcomeDialog').close();
   render();
 });
+
 ['salaryInput', 'payDay1', 'payDay2', 'split1', 'split2'].forEach(id => $(id).addEventListener('input', validateSettingsForm));
 
-$('settingsForm').addEventListener('submit', (event) => {
+$('settingsForm').addEventListener('submit', event => {
   event.preventDefault();
   if (!validateSettingsForm()) return;
   state.settings = Core.normalizeSettings(settingsFromForm());
@@ -433,7 +544,7 @@ $('settingsForm').addEventListener('submit', (event) => {
   render();
 });
 
-$('billForm').addEventListener('submit', (event) => {
+$('billForm').addEventListener('submit', event => {
   event.preventDefault();
   const period = currentPeriod();
   const recurring = $('billRecurring').checked;
@@ -448,10 +559,8 @@ $('billForm').addEventListener('submit', (event) => {
     activePeriod: recurring ? null : (existing?.activePeriod || period),
     paidPeriods: existing?.paidPeriods || []
   }, period);
-
   if (existing) state.bills = state.bills.map(item => item.id === existing.id ? nextBill : item);
   else state.bills.push(nextBill);
-
   persist();
   $('billDialog').close();
   resetBillForm();
@@ -459,59 +568,72 @@ $('billForm').addEventListener('submit', (event) => {
   render();
 });
 
-$('billDialog').addEventListener('close', () => resetBillForm());
+$('movementForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const movement = Core.normalizeMovement({
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    type: $('movementType').value,
+    name: $('movementName').value.trim(),
+    amount: Number($('movementAmount').value),
+    date: $('movementDate').value,
+    category: $('movementCategory').value
+  });
+  if (!movement.name || movement.amount <= 0) return;
+  state.movements.push(movement);
+  persist();
+  $('movementDialog').close();
+  $('purchaseResult').hidden = true;
+  render();
+});
+
+$('billDialog').addEventListener('close', resetBillForm);
 
 document.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => {
-  document.querySelectorAll('.segment').forEach(item => item.classList.remove('active'));
-  button.classList.add('active');
   state.filter = button.dataset.filter;
   persist();
   renderBills();
 }));
 
-$('purchaseSimulator').addEventListener('submit', (event) => {
+document.querySelectorAll('.movement-segment').forEach(button => button.addEventListener('click', () => {
+  state.movementFilter = button.dataset.movementFilter;
+  persist();
+  renderMovements();
+}));
+
+$('purchaseSimulator').addEventListener('submit', event => {
   event.preventDefault();
   const host = $('purchaseResult');
   if (!Number(state.settings.salary)) {
     host.hidden = false;
     host.className = 'simulator-result danger';
-    host.innerHTML = '<strong>Configure sua renda primeiro.</strong><span>O simulador precisa saber quanto entra em cada pagamento antes de dizer se uma compra cabe.</span>';
+    host.innerHTML = '<strong>Configure sua renda primeiro.</strong><span>O simulador precisa saber quanto entra em cada pagamento.</span>';
     return;
   }
-
   const amount = Number($('purchaseAmount').value);
   if (!Number.isFinite(amount) || amount <= 0) return;
-  const period = currentPeriod();
-  const currentKey = Core.currentCycleKey(state.settings, today());
-  const available = Core.plannedAvailableForCycle(currentKey, state.bills, state.settings, period);
-  const reserveOutgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
-  const result = Core.purchaseDecision(amount, available, reserveOutgoing, today(), state.settings);
-  renderPurchaseResult(result, $('purchaseName').value.trim());
+  const snapshot = currentSnapshot();
+  renderPurchaseResult(Core.purchaseDecision(amount, snapshot.available, snapshot.reserveOutgoing, today(), state.settings), $('purchaseName').value.trim());
+});
+
+$('prevMonthBtn').addEventListener('click', () => {
+  viewPeriod = Core.shiftPeriod(viewPeriod, -1);
+  renderMonthBrowser();
+});
+$('nextMonthBtn').addEventListener('click', () => {
+  viewPeriod = Core.shiftPeriod(viewPeriod, 1);
+  renderMonthBrowser();
 });
 
 $('csvExportBtn').addEventListener('click', () => {
-  const csv = '\ufeff' + Core.billsToCsv(state.bills, state.settings, currentPeriod());
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `quinzena-contas-${currentPeriod()}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const content = '\ufeffCONTAS\r\n' + Core.billsToCsv(state.bills, state.settings, currentPeriod()) + '\r\n\r\nMOVIMENTOS\r\n' + Core.movementsToCsv(state.movements, state.settings, currentPeriod());
+  downloadText(content, 'text/csv;charset=utf-8', `quinzena-${currentPeriod()}.csv`);
 });
 
 $('exportBtn').addEventListener('click', () => {
-  const payload = { ...state, exportedAt: new Date().toISOString() };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `quinzena-backup-${new Date().toISOString().slice(0,10)}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadText(JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2), 'application/json', `quinzena-backup-${localDateString()}.json`);
 });
 
-$('importInput').addEventListener('change', async (event) => {
+$('importInput').addEventListener('change', async event => {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
@@ -521,17 +643,50 @@ $('importInput').addEventListener('change', async (event) => {
     if (!Core.validateSettings(migrated.settings).ok) throw new Error('Configuração inválida');
     state = migrated;
     persist();
+    viewPeriod = currentPeriod();
     $('purchaseResult').hidden = true;
     render();
   } catch {
-    alert('Não consegui importar esse backup. Confira se é um arquivo válido do Quinzena.');
+    alert('Não consegui importar esse backup. Confira se ele foi exportado pelo Quinzena.');
   } finally {
     event.target.value = '';
   }
 });
 
+$('resetDataBtn').addEventListener('click', () => {
+  if (!confirm('Zerar todos os dados do Quinzena neste aparelho? Essa ação não pode ser desfeita sem um backup.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state = cloneDefaultState();
+  viewPeriod = currentPeriod();
+  persist();
+  render();
+  setTimeout(() => $('welcomeDialog').showModal(), 100);
+});
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  $('installBtn').hidden = false;
+});
+
+$('installBtn').addEventListener('click', async () => {
+  if (!installPrompt) {
+    alert('No Chrome, use o menu ⋮ e escolha “Instalar app” ou “Adicionar à tela inicial”.');
+    return;
+  }
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => null);
+  installPrompt = null;
+  $('installBtn').hidden = true;
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  $('installBtn').hidden = true;
+});
+
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js').then(registration => registration.update()).catch(() => {});
 }
 
 render();
