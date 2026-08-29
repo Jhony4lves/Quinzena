@@ -28,7 +28,25 @@
     .cycle-reserve{font-weight:700;border-top-style:dashed}
     .cycle-reserve.incoming{color:var(--accent)}
     .cycle-reserve.outgoing{color:#c8ffe2}
-    @media(max-width:720px){.bill-actions{grid-column:2/4;justify-self:end}.bill-row{row-gap:5px}.reserve-item{align-items:flex-start;flex-direction:column}.reserve-item>b{white-space:normal}}
+    .decision-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-top:12px}
+    .decision-card{padding:21px 22px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between}
+    .daily-amount{font-size:2rem;letter-spacing:-.04em;line-height:1.05;margin-top:6px}
+    .daily-amount small{font-size:.9rem;color:var(--muted);letter-spacing:0;font-weight:700}
+    .decision-copy{font-size:.82rem;line-height:1.45;color:var(--muted);margin-top:9px}
+    .next-month-value{font-size:1.45rem;letter-spacing:-.02em;margin-top:6px}
+    .simulator-card{margin-top:12px;padding:21px 22px}
+    .simulator-card .section-heading{margin-bottom:14px}
+    .simulator-form{display:grid;grid-template-columns:1fr 160px auto;gap:9px;align-items:end}
+    .simulator-form label{display:grid;gap:6px;color:var(--muted);font-size:.76rem;font-weight:700}
+    .simulator-form input{width:100%;box-sizing:border-box}
+    .simulator-result{margin-top:12px;border:1px solid var(--border);border-radius:15px;padding:14px 15px;display:grid;gap:5px;background:rgba(255,255,255,.018)}
+    .simulator-result[hidden]{display:none}
+    .simulator-result strong{font-size:.95rem}
+    .simulator-result span{font-size:.82rem;color:var(--muted);line-height:1.45}
+    .simulator-result.good{border-color:rgba(119,242,179,.25);background:rgba(119,242,179,.045)}
+    .simulator-result.warning{border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.045)}
+    .simulator-result.danger{border-color:rgba(255,118,118,.28);background:rgba(255,118,118,.045)}
+    @media(max-width:720px){.bill-actions{grid-column:2/4;justify-self:end}.bill-row{row-gap:5px}.reserve-item{align-items:flex-start;flex-direction:column}.reserve-item>b{white-space:normal}.decision-grid{grid-template-columns:1fr}.simulator-form{grid-template-columns:1fr 1fr}.simulator-form button{grid-column:1/-1}.daily-amount{font-size:1.85rem}}
   </style>
 </head>
 <body>
@@ -53,9 +71,30 @@
         <article class="metric card"><span>Saldo mensal previsto</span><strong id="monthBalance">R$ 0,00</strong></article>
       </section>
 
+      <section class="decision-grid" aria-label="Decisões da quinzena">
+        <article class="card decision-card">
+          <div><p class="eyebrow">ATÉ O PRÓXIMO PAGAMENTO</p><h2 class="daily-amount"><span id="dailyLimit">R$ 0,00</span> <small>por dia</small></h2></div>
+          <p class="decision-copy" id="dailyLimitCaption">Configure sua renda para calcular seu limite diário.</p>
+        </article>
+        <article class="card decision-card">
+          <div><p class="eyebrow">PRÓXIMO MÊS</p><h2 class="next-month-value" id="nextMonthBalance">R$ 0,00 livres</h2></div>
+          <p class="decision-copy" id="nextMonthCaption">As recorrências aparecem aqui antes da virada do mês.</p>
+        </article>
+      </section>
+
       <section class="reserve-card card" id="reserveCard" hidden>
         <div class="section-heading"><div><p class="eyebrow">RESERVA AUTOMÁTICA</p><h2>Um pagamento ajuda o próximo</h2></div></div>
         <div class="reserve-list" id="reserveList"></div>
+      </section>
+
+      <section class="card simulator-card">
+        <div class="section-heading"><div><p class="eyebrow">DECISÃO DE COMPRA</p><h2>Cabe nesta quinzena?</h2><p class="muted">Simule antes de gastar. Nada é salvo nas suas contas.</p></div></div>
+        <form class="simulator-form" id="purchaseSimulator">
+          <label>O que você quer comprar?<input type="text" id="purchaseName" maxlength="60" placeholder="Ex.: Tênis" /></label>
+          <label>Valor<input type="number" id="purchaseAmount" min="0.01" step="0.01" placeholder="0,00" required /></label>
+          <button class="primary-btn" type="submit">Simular</button>
+        </form>
+        <div class="simulator-result" id="purchaseResult" hidden aria-live="polite"></div>
       </section>
 
       <section class="split card">
