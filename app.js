@@ -60,21 +60,14 @@ function activeBills() {
   return Core.activeBills(state.bills, currentPeriod());
 }
 
-function nextPaymentDate() {
-  const now = today();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const day = now.getDate();
-  const pays = Core.normalizedPaydays(state.settings);
-  const nextInMonth = pays.find(pay => pay.day > day);
-  const chosen = nextInMonth || pays[0];
-  return nextInMonth
-    ? new Date(year, month, chosen.day)
-    : new Date(year, month + 1, chosen.day);
-}
-
 function formatDateShort(date) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date).replace('.', '');
+}
+
+function formatPeriod(period) {
+  const [year, month] = String(period).split('-').map(Number);
+  if (!year || !month) return period;
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date(year, month - 1, 1));
 }
 
 function render() {
@@ -91,6 +84,7 @@ function render() {
   const monthBalance = Core.monthBalance(state.bills, state.settings, period);
   const reservePlan = Core.automaticReservePlan(state.bills, state.settings, period);
   const currentGap = reservePlan.find(item => item.toKey === currentKey);
+  const nextPay = Core.nextPaymentDate(today(), state.settings);
 
   $('cycleLabel').textContent = `${currentCfg.label.toUpperCase()} · ${currentCfg.pct}%`;
   $('availableAmount').textContent = money(available);
@@ -98,7 +92,7 @@ function render() {
   $('cycleBills').textContent = money(cycleBills);
   $('cycleBills').title = cycleOpenBills > 0 ? `${money(cycleOpenBills)} ainda em aberto` : 'Todas as contas deste ciclo estão pagas';
   $('monthBalance').textContent = money(monthBalance);
-  $('nextPayDate').textContent = `Próximo pagamento · ${formatDateShort(nextPaymentDate())}`;
+  $('nextPayDate').textContent = `Próximo pagamento · ${formatDateShort(nextPay)}`;
 
   if (reserveOutgoing > 0) {
     $('availableCaption').textContent = `disponível após contas e ${money(reserveOutgoing)} reservados para o próximo ciclo`;
@@ -125,9 +119,59 @@ function render() {
     $('healthText').style.color = 'var(--accent)';
   }
 
+  renderDailyDecision(currentKey, period, available);
+  renderNextMonth();
   renderReservePlan(period);
   renderCycles(currentKey, period);
   renderBills(period);
+}
+
+function renderDailyDecision(currentKey, period, available) {
+  const salary = Number(state.settings.salary);
+  const days = Core.daysUntilNextPayment(today(), state.settings);
+  const nextPay = Core.nextPaymentDate(today(), state.settings);
+  const daily = Core.dailySpendingLimit(available, today(), state.settings);
+  const outgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
+
+  $('dailyLimit').textContent = money(daily);
+
+  if (!salary) {
+    $('dailyLimitCaption').textContent = 'Configure sua renda para calcular seu limite diário.';
+    return;
+  }
+
+  if (available <= 0) {
+    $('dailyLimitCaption').textContent = `Seu ciclo já está sem margem livre até ${formatDateShort(nextPay)}. Primeiro ajuste contas ou renda.`;
+    return;
+  }
+
+  const protectedText = outgoing > 0 ? ` ${money(outgoing)} de reserva já ficaram fora dessa conta.` : '';
+  $('dailyLimitCaption').textContent = `${days} ${days === 1 ? 'dia' : 'dias'} até ${formatDateShort(nextPay)}.${protectedText} É uma média do saldo planejado; gastos variáveis ainda não registrados reduzem esse limite.`;
+}
+
+function renderNextMonth() {
+  const nextPeriod = Core.shiftPeriod(currentPeriod(), 1);
+  const projection = Core.projectionForPeriod(state.bills, state.settings, nextPeriod);
+  const salary = Number(state.settings.salary);
+  const monthName = formatPeriod(nextPeriod);
+
+  if (!salary) {
+    $('nextMonthBalance').textContent = 'Configure sua renda';
+    $('nextMonthCaption').textContent = 'As recorrências aparecem aqui antes da virada do mês.';
+    return;
+  }
+
+  $('nextMonthBalance').textContent = projection.balance >= 0
+    ? `${money(projection.balance)} livres`
+    : `${money(Math.abs(projection.balance))} faltando`;
+
+  if (projection.uncovered > 0) {
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas recorrentes e ${money(projection.uncovered)} ainda sem cobertura entre os dois pagamentos.`;
+  } else if (projection.reserveTotal > 0) {
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} em contas recorrentes; ${money(projection.reserveTotal)} serão protegidos de um pagamento para o outro.`;
+  } else {
+    $('nextMonthCaption').textContent = `${monthName}: ${money(projection.billsTotal)} já previstos em contas recorrentes, sem reserva extra necessária.`;
+  }
 }
 
 function renderReservePlan(period) {
@@ -267,7 +311,7 @@ function renderBills(period = currentPeriod()) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>'\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[char]));
+  return String(value).replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 }
 
 function openSettings() {
@@ -331,6 +375,27 @@ function openBillDialog(bill = null) {
   $('billDialog').showModal();
 }
 
+function renderPurchaseResult(result, name) {
+  const host = $('purchaseResult');
+  const label = name ? `“${escapeHtml(name)}”` : 'Essa compra';
+  host.hidden = false;
+
+  if (result.status === 'fits') {
+    host.className = 'simulator-result good';
+    host.innerHTML = `<strong>${label} cabe nesta quinzena.</strong><span>Depois da compra, ficam ${money(result.afterPurchase)} livres. Seu limite médio passa a ${money(result.dailyAfter)}/dia pelos próximos ${result.days} ${result.days === 1 ? 'dia' : 'dias'}.</span>`;
+    return;
+  }
+
+  if (result.status === 'invades_reserve') {
+    host.className = 'simulator-result warning';
+    host.innerHTML = `<strong>Só cabe quebrando uma reserva.</strong><span>${label} usaria ${money(result.reserveInvaded)} que já estão protegidos para o próximo ciclo. Financeiramente, eu não trataria esse valor como disponível.</span>`;
+    return;
+  }
+
+  host.className = 'simulator-result danger';
+  host.innerHTML = `<strong>Não cabe nesta quinzena.</strong><span>Mesmo consumindo toda a reserva protegida, ainda faltariam ${money(result.shortfall)} para ${label}. Melhor adiar ou reduzir o valor.</span>`;
+}
+
 $('openSettings').addEventListener('click', openSettings);
 $('addBillBtn').addEventListener('click', () => openBillDialog());
 $('startOnboardingBtn').addEventListener('click', () => {
@@ -364,6 +429,7 @@ $('settingsForm').addEventListener('submit', (event) => {
   state.settings = Core.normalizeSettings(settingsFromForm());
   persist();
   $('settingsDialog').close();
+  $('purchaseResult').hidden = true;
   render();
 });
 
@@ -389,6 +455,7 @@ $('billForm').addEventListener('submit', (event) => {
   persist();
   $('billDialog').close();
   resetBillForm();
+  $('purchaseResult').hidden = true;
   render();
 });
 
@@ -401,6 +468,26 @@ document.querySelectorAll('.segment').forEach(button => button.addEventListener(
   persist();
   renderBills();
 }));
+
+$('purchaseSimulator').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const host = $('purchaseResult');
+  if (!Number(state.settings.salary)) {
+    host.hidden = false;
+    host.className = 'simulator-result danger';
+    host.innerHTML = '<strong>Configure sua renda primeiro.</strong><span>O simulador precisa saber quanto entra em cada pagamento antes de dizer se uma compra cabe.</span>';
+    return;
+  }
+
+  const amount = Number($('purchaseAmount').value);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  const period = currentPeriod();
+  const currentKey = Core.currentCycleKey(state.settings, today());
+  const available = Core.plannedAvailableForCycle(currentKey, state.bills, state.settings, period);
+  const reserveOutgoing = Core.reserveOutgoingForCycle(currentKey, state.bills, state.settings, period);
+  const result = Core.purchaseDecision(amount, available, reserveOutgoing, today(), state.settings);
+  renderPurchaseResult(result, $('purchaseName').value.trim());
+});
 
 $('csvExportBtn').addEventListener('click', () => {
   const csv = '\ufeff' + Core.billsToCsv(state.bills, state.settings, currentPeriod());
@@ -434,6 +521,7 @@ $('importInput').addEventListener('change', async (event) => {
     if (!Core.validateSettings(migrated.settings).ok) throw new Error('Configuração inválida');
     state = migrated;
     persist();
+    $('purchaseResult').hidden = true;
     render();
   } catch {
     alert('Não consegui importar esse backup. Confira se é um arquivo válido do Quinzena.');

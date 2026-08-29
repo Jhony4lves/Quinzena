@@ -97,3 +97,51 @@ test('informa déficit recorrente descoberto quando o ciclo anterior não conseg
   assert.equal(plan.length, 1);
   assert.deepEqual(plan[0], { fromKey: 'p2', toKey: 'p1', required: 150, amount: 50, uncovered: 100 });
 });
+
+test('calcula limite diário até o próximo pagamento', () => {
+  const date = new Date(2026, 7, 28, 21, 0, 0);
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  assert.equal(Core.daysUntilNextPayment(date, twoPaySettings), 4);
+  assert.equal(Core.dailySpendingLimit(640, date, twoPaySettings), 160);
+});
+
+test('simulador aprova compra que cabe e recalcula limite diário', () => {
+  const date = new Date(2026, 7, 28, 21, 0, 0);
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const result = Core.purchaseDecision(299, 640, 20, date, twoPaySettings);
+  assert.equal(result.status, 'fits');
+  assert.equal(result.afterPurchase, 341);
+  assert.equal(result.dailyAfter, 85.25);
+  assert.equal(result.reserveInvaded, 0);
+});
+
+test('simulador avisa quando compra invade reserva protegida', () => {
+  const date = new Date(2026, 7, 28, 21, 0, 0);
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const result = Core.purchaseDecision(650, 640, 20, date, twoPaySettings);
+  assert.equal(result.status, 'invades_reserve');
+  assert.equal(result.reserveInvaded, 10);
+  assert.equal(result.shortfall, 0);
+});
+
+test('simulador mostra falta real depois de consumir toda a reserva', () => {
+  const date = new Date(2026, 7, 28, 21, 0, 0);
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const result = Core.purchaseDecision(700, 640, 20, date, twoPaySettings);
+  assert.equal(result.status, 'exceeds');
+  assert.equal(result.reserveInvaded, 20);
+  assert.equal(result.shortfall, 40);
+});
+
+test('projeção do próximo mês mantém recorrências e ignora compra única do mês atual', () => {
+  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
+  const faculdade = bill({ id: 'faculdade', name: 'Faculdade', amount: 1560, dueDay: 14, category: 'Educação' });
+  const compra = bill({ id: 'compra', name: 'Compra única', amount: 500, dueDay: 20, recurring: false, activePeriod: '2026-08' });
+  const next = Core.shiftPeriod(period, 1);
+  const projection = Core.projectionForPeriod([faculdade, compra], twoPaySettings, next);
+  assert.equal(next, '2026-09');
+  assert.equal(projection.billsTotal, 1560);
+  assert.equal(projection.balance, 640);
+  assert.equal(projection.reserveTotal, 20);
+  assert.equal(projection.cycles.p2, 640);
+});

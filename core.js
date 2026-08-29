@@ -16,6 +16,13 @@
     return `${year}-${month}`;
   }
 
+  function shiftPeriod(period = periodKey(), delta = 1) {
+    const [year, month] = String(period).split('-').map(Number);
+    if (!year || !month) return periodKey();
+    const shifted = new Date(year, month - 1 + Number(delta || 0), 1);
+    return periodKey(shifted);
+  }
+
   function normalizeSettings(settings = {}) {
     return {
       salary: roundMoney(settings.salary),
@@ -71,6 +78,33 @@
     const s = normalizeSettings(settings);
     const cfg = payConfigByKey(key, s);
     return roundMoney(s.salary * (cfg.pct / 100));
+  }
+
+  function nextPaymentDate(date = new Date(), settings = {}) {
+    const now = new Date(date);
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const day = now.getDate();
+    const pays = normalizedPaydays(settings);
+    const nextInMonth = pays.find(pay => pay.day > day);
+    const chosen = nextInMonth || pays[0];
+    return nextInMonth
+      ? new Date(year, month, chosen.day)
+      : new Date(year, month + 1, chosen.day);
+  }
+
+  function daysUntilNextPayment(date = new Date(), settings = {}) {
+    const current = new Date(date);
+    current.setHours(0, 0, 0, 0);
+    const next = nextPaymentDate(current, settings);
+    next.setHours(0, 0, 0, 0);
+    const diff = Math.ceil((next.getTime() - current.getTime()) / 86400000);
+    return Math.max(1, diff);
+  }
+
+  function dailySpendingLimit(available, date = new Date(), settings = {}) {
+    const days = daysUntilNextPayment(date, settings);
+    return roundMoney(Math.max(0, Number(available || 0)) / days);
   }
 
   function normalizeBill(bill = {}, currentPeriod = periodKey()) {
@@ -197,8 +231,55 @@
     return roundMoney(base + incoming - outgoing);
   }
 
+  function purchaseDecision(amount, available, reserveOutgoing = 0, date = new Date(), settings = {}) {
+    const price = roundMoney(Math.max(0, Number(amount || 0)));
+    const free = roundMoney(Number(available || 0));
+    const protectedReserve = roundMoney(Math.max(0, Number(reserveOutgoing || 0)));
+    const spendableBeforeReserve = Math.max(0, free);
+    const totalBeforeShortfall = roundMoney(spendableBeforeReserve + protectedReserve);
+    let status = 'fits';
+    let reserveInvaded = 0;
+    let shortfall = 0;
+
+    if (price > spendableBeforeReserve && price <= totalBeforeShortfall) {
+      status = 'invades_reserve';
+      reserveInvaded = roundMoney(price - spendableBeforeReserve);
+    } else if (price > totalBeforeShortfall) {
+      status = 'exceeds';
+      reserveInvaded = protectedReserve;
+      shortfall = roundMoney(price - totalBeforeShortfall);
+    }
+
+    const afterPurchase = roundMoney(free - price);
+    return {
+      status,
+      price,
+      afterPurchase,
+      reserveInvaded,
+      shortfall,
+      days: daysUntilNextPayment(date, settings),
+      dailyAfter: dailySpendingLimit(afterPurchase, date, settings)
+    };
+  }
+
   function monthBalance(bills = [], settings = {}, period = periodKey()) {
     return roundMoney(normalizeSettings(settings).salary - monthBillTotal(bills, period));
+  }
+
+  function projectionForPeriod(bills = [], settings = {}, period = periodKey()) {
+    const plan = automaticReservePlan(bills, settings, period);
+    const reserveTotal = roundMoney(plan.reduce((sum, item) => sum + item.amount, 0));
+    return {
+      period,
+      billsTotal: monthBillTotal(bills, period),
+      balance: monthBalance(bills, settings, period),
+      reserveTotal,
+      uncovered: roundMoney(plan.reduce((sum, item) => sum + item.uncovered, 0)),
+      cycles: {
+        p1: plannedAvailableForCycle('p1', bills, settings, period),
+        p2: plannedAvailableForCycle('p2', bills, settings, period)
+      }
+    };
   }
 
   function csvEscape(value) {
@@ -229,6 +310,7 @@
     DEFAULT_SETTINGS,
     roundMoney,
     periodKey,
+    shiftPeriod,
     normalizeSettings,
     validateSettings,
     normalizedPaydays,
@@ -236,6 +318,9 @@
     currentCycleKey,
     payConfigByKey,
     incomeForCycle,
+    nextPaymentDate,
+    daysUntilNextPayment,
+    dailySpendingLimit,
     normalizeBill,
     billActiveInPeriod,
     activeBills,
@@ -252,7 +337,9 @@
     reserveIncomingForCycle,
     reserveOutgoingForCycle,
     plannedAvailableForCycle,
+    purchaseDecision,
     monthBalance,
+    projectionForPeriod,
     billsToCsv
   };
 });
