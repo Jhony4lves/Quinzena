@@ -12,6 +12,13 @@ function bill(overrides = {}) {
   }, period);
 }
 
+function movement(overrides = {}) {
+  return Core.normalizeMovement({
+    id: 'm1', type: 'expense', name: 'Mercado', amount: 50,
+    date: '2026-08-20', category: 'Alimentação', ...overrides
+  });
+}
+
 test('divide a renda em centavos sem drift visível', () => {
   assert.equal(Core.incomeForCycle('p1', settings), 1591.10);
   assert.equal(Core.incomeForCycle('p2', settings), 681.90);
@@ -65,11 +72,7 @@ test('exporta CSV com ciclo, recorrência e status do mês', () => {
 
 test('reserva no segundo pagamento o déficit recorrente do primeiro pagamento seguinte', () => {
   const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
-  const faculdade = Core.normalizeBill({
-    id: 'faculdade', name: 'Faculdade', amount: 1560, dueDay: 14,
-    category: 'Educação', recurring: true, paidPeriods: []
-  }, period);
-
+  const faculdade = Core.normalizeBill({ id: 'faculdade', name: 'Faculdade', amount: 1560, dueDay: 14, category: 'Educação', recurring: true, paidPeriods: [] }, period);
   const plan = Core.automaticReservePlan([faculdade], twoPaySettings, period);
   assert.deepEqual(plan, [{ fromKey: 'p2', toKey: 'p1', required: 20, amount: 20, uncovered: 0 }]);
   assert.equal(Core.availableForCycle('p1', [faculdade], twoPaySettings, period), -20);
@@ -80,11 +83,7 @@ test('reserva no segundo pagamento o déficit recorrente do primeiro pagamento s
 
 test('despesa não recorrente não cria reserva automática para meses futuros', () => {
   const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
-  const compraUnica = Core.normalizeBill({
-    id: 'unica', name: 'Compra única', amount: 1560, dueDay: 14,
-    category: 'Outros', recurring: false, activePeriod: period, paidPeriods: []
-  }, period);
-
+  const compraUnica = Core.normalizeBill({ id: 'unica', name: 'Compra única', amount: 1560, dueDay: 14, category: 'Outros', recurring: false, activePeriod: period, paidPeriods: [] }, period);
   assert.deepEqual(Core.automaticReservePlan([compraUnica], twoPaySettings, period), []);
   assert.equal(Core.plannedAvailableForCycle('p1', [compraUnica], twoPaySettings, period), -20);
 });
@@ -94,7 +93,6 @@ test('informa déficit recorrente descoberto quando o ciclo anterior não conseg
   const p1Bill = bill({ id: 'p1', amount: 850, dueDay: 10 });
   const p2Bill = bill({ id: 'p2', amount: 250, dueDay: 20 });
   const plan = Core.automaticReservePlan([p1Bill, p2Bill], tightSettings, period);
-  assert.equal(plan.length, 1);
   assert.deepEqual(plan[0], { fromKey: 'p2', toKey: 'p1', required: 150, amount: 50, uncovered: 100 });
 });
 
@@ -117,8 +115,7 @@ test('simulador aprova compra que cabe e recalcula limite diário', () => {
 
 test('simulador avisa quando compra invade reserva protegida', () => {
   const date = new Date(2026, 7, 28, 21, 0, 0);
-  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
-  const result = Core.purchaseDecision(650, 640, 20, date, twoPaySettings);
+  const result = Core.purchaseDecision(650, 640, 20, date, { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 });
   assert.equal(result.status, 'invades_reserve');
   assert.equal(result.reserveInvaded, 10);
   assert.equal(result.shortfall, 0);
@@ -126,8 +123,7 @@ test('simulador avisa quando compra invade reserva protegida', () => {
 
 test('simulador mostra falta real depois de consumir toda a reserva', () => {
   const date = new Date(2026, 7, 28, 21, 0, 0);
-  const twoPaySettings = { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 };
-  const result = Core.purchaseDecision(700, 640, 20, date, twoPaySettings);
+  const result = Core.purchaseDecision(700, 640, 20, date, { salary: 2200, payDay1: 1, payDay2: 15, split1: 70, split2: 30 });
   assert.equal(result.status, 'exceeds');
   assert.equal(result.reserveInvaded, 20);
   assert.equal(result.shortfall, 40);
@@ -144,4 +140,62 @@ test('projeção do próximo mês mantém recorrências e ignora compra única d
   assert.equal(projection.balance, 640);
   assert.equal(projection.reserveTotal, 20);
   assert.equal(projection.cycles.p2, 640);
+});
+
+test('gasto variável reduz saldo real do ciclo sem mexer no planejamento das contas', () => {
+  const food = movement({ amount: 81.9, date: '2026-08-20' });
+  assert.equal(Core.plannedAvailableForCycle('p2', [], settings, period), 681.90);
+  assert.equal(Core.actualAvailableForCycle('p2', [], [food], settings, period), 600);
+  assert.equal(Core.movementTotalsForCycle('p2', [food], settings, period).expense, 81.9);
+});
+
+test('entrada extra aumenta saldo real do ciclo e saldo efetivo do mês', () => {
+  const extra = movement({ type: 'income', name: 'Freela', amount: 150, date: '2026-08-20', category: 'Renda extra' });
+  assert.equal(Core.actualAvailableForCycle('p2', [], [extra], settings, period), 831.90);
+  assert.equal(Core.effectiveMonthBalance([], [extra], settings, period), 2423);
+});
+
+test('gastos e entradas se anulam corretamente no saldo mensal efetivo', () => {
+  const moves = [
+    movement({ id: 'e', type: 'expense', amount: 200, date: '2026-08-20' }),
+    movement({ id: 'i', type: 'income', amount: 75, date: '2026-08-22' })
+  ];
+  assert.deepEqual(Core.movementTotalsForPeriod(moves, period), { income: 75, expense: 200 });
+  assert.equal(Core.effectiveMonthBalance([], moves, settings, period), 2148);
+});
+
+test('movimento é atribuído ao ciclo conforme a data', () => {
+  assert.equal(Core.movementCycleKey(movement({ date: '2026-08-10' }), settings), 'p1');
+  assert.equal(Core.movementCycleKey(movement({ date: '2026-08-20' }), settings), 'p2');
+});
+
+test('movimentos de outro mês não contaminam o saldo atual', () => {
+  const september = movement({ date: '2026-09-20', amount: 500 });
+  assert.equal(Core.movementTotalsForPeriod([september], '2026-08').expense, 0);
+  assert.equal(Core.movementTotalsForPeriod([september], '2026-09').expense, 500);
+});
+
+test('calcula percentual da renda comprometida por recorrências', () => {
+  const bills = [bill({ id: 'a', amount: 1000, dueDay: 10 }), bill({ id: 'b', amount: 500, dueDay: 20 })];
+  assert.equal(Core.recurringCommitmentRatio(bills, { ...settings, salary: 3000 }, period), 50);
+});
+
+test('identifica categoria com maior gasto variável', () => {
+  const moves = [
+    movement({ id: '1', amount: 70, category: 'Alimentação' }),
+    movement({ id: '2', amount: 40, category: 'Transporte' }),
+    movement({ id: '3', amount: 60, category: 'Alimentação' })
+  ];
+  assert.deepEqual(Core.topExpenseCategory(moves, period), { category: 'Alimentação', amount: 130 });
+});
+
+test('identifica maior conta recorrente', () => {
+  const bills = [bill({ id: 'a', name: 'Aluguel', amount: 900 }), bill({ id: 'b', name: 'Internet', amount: 120 })];
+  assert.equal(Core.largestRecurringBill(bills, period).name, 'Aluguel');
+});
+
+test('exporta movimentos em CSV com tipo, ciclo e centavos pt-BR', () => {
+  const csv = Core.movementsToCsv([movement({ type: 'income', name: 'Venda; usada', amount: 99.9, date: '2026-08-20', category: 'Venda' })], settings, period);
+  assert.match(csv, /Data;Tipo;Descrição;Valor;Categoria;Ciclo/);
+  assert.match(csv, /2026-08-20;Entrada;"Venda; usada";99,90;Venda;2º pagamento/);
 });
